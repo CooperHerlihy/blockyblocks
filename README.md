@@ -1,6 +1,6 @@
 # Blocky Blocks
 
-A Minecraft clone written in C11 with OpenGL.
+A Minecraft clone written in C99 with OpenGL.
 
 ## Dependencies
 

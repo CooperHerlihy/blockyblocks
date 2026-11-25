@@ -1,6 +1,6 @@
 # Blocky Blocks
 
-A minecraft clone, written in C11 with OpenGL
+A minecraft clone, written in C99 with OpenGL
 
 Uses GLAD to load OpenGL
 Uses SDL3 for platform independence
