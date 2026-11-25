@@ -1,24 +1,29 @@
-SHADER_BEGIN(VERTEX)
+begin_vertex_shader
 
 #version 330
 
-layout (location = 0) in vec3 inPos;
+layout (location = 0) in vec2 vertPos;
+
+uniform vec2 uPos;
 
 void main()
 {
-    gl_Position = vec4(inPos, 1.0);
+    gl_Position = vec4(vertPos + uPos, 0.0, 1.0);
 }
 
-SHADER_END(VERTEX)
-SHADER_BEGIN(FRAGMENT)
+
+end_vertex_shader
+begin_fragment_shader
 
 #version 330
 
 layout (location = 0) out vec4 outColor;
 
+uniform vec4 uColor;
+
 void main()
 {
-    outColor = vec4(0.6f, 0.2f, 0.1f, 1.0f);
+    outColor = uColor;
 }
 
-SHADER_END(FRAGMENT)
+end_fragment_shader

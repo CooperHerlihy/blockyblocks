@@ -1,3 +1,4 @@
+#include <math.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -115,10 +116,20 @@ static gl_object shader_create(const char* shader_file)
         return 0;
     }
 
-    usize vertex_shader_pos = string_find_sub(shader_source, "SHADER_BEGIN(VERTEX)") + sizeof("SHADER_BEGIN(VERTEX)");
-    usize vertex_shader_end = string_find_sub(shader_source, "SHADER_END(VERTEX)");
-    if (vertex_shader_pos == (usize)-1 || vertex_shader_end == (usize)-1)
+    usize vertex_shader_pos = string_find_sub(shader_source, "begin_vertex_shader");
+    if (vertex_shader_pos == (usize)-1)
+    {
+        printf("Could not find \"begin_vertex_shader\" in %s\n", shader_file);
         return 0;
+    }
+    vertex_shader_pos += sizeof("begin_vertex_shader");
+
+    usize vertex_shader_end = string_find_sub(shader_source, "end_vertex_shader");
+    if (vertex_shader_end == (usize)-1)
+    {
+        printf("Could not find \"end_vertex_shader\" in %s\n", shader_file);
+        return 0;
+    }
 
     gl_object vertex_shader = glCreateShader(GL_VERTEX_SHADER);
     const GLchar* vertex_shader_source = shader_source + vertex_shader_pos;
@@ -135,10 +146,20 @@ static gl_object shader_create(const char* shader_file)
         printf("glCompileShader failed to compile vertex shader: %s", log);
     }
 
-    usize fragment_shader_pos = string_find_sub(shader_source, "SHADER_BEGIN(FRAGMENT)") + sizeof("SHADER_BEGIN(FRAGMENT)");
-    usize fragment_shader_end = string_find_sub(shader_source, "SHADER_END(FRAGMENT)");
-    if (fragment_shader_pos == (usize)-1 || fragment_shader_end == (usize)-1)
+    usize fragment_shader_pos = string_find_sub(shader_source, "begin_fragment_shader");
+    if (fragment_shader_pos == (usize)-1)
+    {
+        printf("Could not find \"begin_fragment_shader\" in %s\n", shader_file);
         return 0;
+    }
+    fragment_shader_pos += sizeof("begin_fragment_shader");
+
+    usize fragment_shader_end = string_find_sub(shader_source, "end_fragment_shader");
+    if (fragment_shader_end == (usize)-1)
+    {
+        printf("Could not find \"end_fragment_shader\" in %s\n", shader_file);
+        return 0;
+    }
 
     gl_object fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
     const GLchar* fragment_shader_source = shader_source + fragment_shader_pos;
@@ -239,8 +260,23 @@ int main(void)
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(float[2]), NULL);
     glEnableVertexAttribArray(0);
 
+    bool left_pressed = false;
+    bool right_pressed = false;
+    bool up_pressed = false;
+    bool down_pressed = false;
+    f32 pos_x = 0.0f;
+    f32 pos_y = 0.0f;
+
+    u64 tick_prev = SDL_GetPerformanceCounter();
+    const u64 tick_frequency = SDL_GetPerformanceFrequency();
+    f32 current_time = 0.0f;
     for (;;)
     {
+        u64 tick_current = SDL_GetPerformanceCounter();
+        f32 delta_time = (f32)(tick_current - tick_prev) / (f32)tick_frequency;
+        tick_prev = tick_current;
+        current_time += delta_time;
+
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
@@ -252,6 +288,27 @@ int main(void)
             case SDL_EVENT_WINDOW_RESIZED:
                 glViewport(0, 0, event.window.data1, event.window.data2);
                 break;
+            case SDL_EVENT_KEY_DOWN:
+            case SDL_EVENT_KEY_UP:
+            {
+                bool down = event.type == SDL_EVENT_KEY_DOWN;
+                switch (event.key.key)
+                {
+                case SDLK_W:
+                    up_pressed = down;
+                    break;
+                case SDLK_A:
+                    left_pressed = down;
+                    break;
+                case SDLK_S:
+                    down_pressed = down;
+                    break;
+                case SDLK_D:
+                    right_pressed = down;
+                    break;
+                }
+                break;
+            }
             }
         }
 
@@ -259,6 +316,21 @@ int main(void)
         glClear(GL_COLOR_BUFFER_BIT);
 
         glUseProgram(shader_program);
+
+        if (left_pressed)
+            pos_x -= 1.0f * delta_time;
+        if (right_pressed)
+            pos_x += 1.0f * delta_time;
+        if (down_pressed)
+            pos_y -= 1.0f * delta_time;
+        if (up_pressed)
+            pos_y += 1.0f * delta_time;
+        glUniform2f(glGetUniformLocation(shader_program, "uPos"), pos_x, pos_y);
+
+        f32 colorVal = sinf(current_time);
+        colorVal *= colorVal;
+        glUniform4f(glGetUniformLocation(shader_program, "uColor"), colorVal, 1.0f - colorVal, 0.2f, 1.0f);
+
         glBindVertexArray(vertex_array);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, NULL);
 

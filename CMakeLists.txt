@@ -23,6 +23,7 @@ target_include_directories(blockyblocks
 
 target_link_libraries(blockyblocks
     PRIVATE
+    m
     SDL3::SDL3)
 
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
