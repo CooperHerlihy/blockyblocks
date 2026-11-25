@@ -30,7 +30,7 @@ typedef GLuint gl_object;
  * If the returned buffer in NULL, the file could not be loaded
  * If the returned buffer is not NULL, it must be freed
  */
-char* file_load(const char* path)
+static char* file_load(const char* path)
 {
     FILE* file = fopen(path, "rb");
     if (file == NULL)
@@ -77,27 +77,53 @@ char* file_load(const char* path)
 }
 
 /**
+ * Search for a substring
+ */
+static usize string_find_sub(const char* str, const char* sub)
+{
+    if (sub == NULL)
+        return 0;
+    if (str == NULL)
+        return (usize)-1;
+
+    usize str_length = strlen(str);
+    usize sub_length = strlen(sub);
+    if (str_length < sub_length)
+        return (usize)-1;
+
+    usize pos = 0;
+    while (memcmp(str + pos, sub, sub_length) != 0)
+    {
+        if ((str + pos)[sub_length] == '\0')
+            return (usize)-1;
+        ++pos;
+    }
+
+    return pos;
+}
+
+/**
  * Load the shader files and create a shader program
  *
  * If the returned object is 0, the shaders could not be loaded
  */
-gl_object shader_create(const char* vertex_shader_file, const char* fragment_shader_file)
+static gl_object shader_create(const char* shader_file)
 {
-    char* vertex_shader_source = file_load(vertex_shader_file);
-    if (vertex_shader_source == NULL)
+    char* shader_source = file_load(shader_file);
+    if (shader_source == NULL)
     {
         return 0;
     }
 
-    char* fragment_shader_source = file_load(fragment_shader_file);
-    if (fragment_shader_source == NULL)
-    {
-        free(vertex_shader_source);
+    usize vertex_shader_pos = string_find_sub(shader_source, "SHADER_BEGIN(VERTEX)") + sizeof("SHADER_BEGIN(VERTEX)");
+    usize vertex_shader_end = string_find_sub(shader_source, "SHADER_END(VERTEX)");
+    if (vertex_shader_pos == (usize)-1 || vertex_shader_end == (usize)-1)
         return 0;
-    }
 
     gl_object vertex_shader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertex_shader, 1, (const char* const*)&vertex_shader_source, NULL);
+    const GLchar* vertex_shader_source = shader_source + vertex_shader_pos;
+    const GLint vertex_shader_length = vertex_shader_end - vertex_shader_pos;
+    glShaderSource(vertex_shader, 1, &vertex_shader_source, &vertex_shader_length);
     glCompileShader(vertex_shader);
 
     int vertex_shader_success = 0;
@@ -109,8 +135,15 @@ gl_object shader_create(const char* vertex_shader_file, const char* fragment_sha
         printf("glCompileShader failed to compile vertex shader: %s", log);
     }
 
+    usize fragment_shader_pos = string_find_sub(shader_source, "SHADER_BEGIN(FRAGMENT)") + sizeof("SHADER_BEGIN(FRAGMENT)");
+    usize fragment_shader_end = string_find_sub(shader_source, "SHADER_END(FRAGMENT)");
+    if (fragment_shader_pos == (usize)-1 || fragment_shader_end == (usize)-1)
+        return 0;
+
     gl_object fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragment_shader, 1, (const char* const*)&fragment_shader_source, NULL);
+    const GLchar* fragment_shader_source = shader_source + fragment_shader_pos;
+    const GLint fragment_shader_length = fragment_shader_end - fragment_shader_pos;
+    glShaderSource(fragment_shader, 1, &fragment_shader_source, &fragment_shader_length);
     glCompileShader(fragment_shader);
 
     int fragment_shader_success = 0;
@@ -138,8 +171,7 @@ gl_object shader_create(const char* vertex_shader_file, const char* fragment_sha
 
     glDeleteShader(vertex_shader);
     glDeleteShader(fragment_shader);
-    free(vertex_shader_source);
-    free(fragment_shader_source);
+    free(shader_source);
     return shader_program;
 }
 
@@ -196,7 +228,7 @@ int main(void)
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 
-    gl_object shader_program = shader_create("shaders/basic.vert", "shaders/basic.frag");
+    gl_object shader_program = shader_create("shaders/basic.glsl");
 
     gl_object vertex_array = 0;
     glGenVertexArrays(1, &vertex_array);
