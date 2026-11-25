@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 typedef int8_t i8;
 typedef int16_t i16;
@@ -23,29 +24,80 @@ typedef size_t usize;
 
 typedef GLuint gl_object;
 
-static const char *vertex_shader_code = "\
-#version 330 core\n\
-layout (location = 0) in vec3 inPos;\n\
-void main()\n\
-{\n\
-    gl_Position = vec4(inPos, 1.0);\n\
-}\n\
-";
-
-
-static const char *fragment_shader_code = "\
-#version 330 core\n\
-layout (location = 0) out vec4 outColor;\n\
-void main()\n\
-{\n\
-    outColor = vec4(0.6f, 0.2f, 0.1f, 1.0f);\n\
-}\n\
-";
-
-gl_object createShader(void)
+/**
+ * Load a file from path into a buffer
+ *
+ * If the returned buffer in NULL, the file could not be loaded
+ * If the returned buffer is not NULL, it must be freed
+ */
+char* file_load(const char* path)
 {
+    FILE* file = fopen(path, "rb");
+    if (file == NULL)
+    {
+        printf("fopen failed to open %s\n", path);
+        return NULL;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0)
+    {
+        printf("fseek failed for %s\n", path);
+        fclose(file);
+        return NULL;
+    }
+
+    long size = ftell(file);
+    if (size < 0)
+    {
+        printf("ftell failed for %s\n", path);
+        fclose(file);
+        return NULL;
+    }
+    rewind(file);
+
+    char* buffer = malloc((usize)size + 1);
+    if (buffer == NULL)
+    {
+        printf("malloc failed for %s\n", path);
+        fclose(file);
+        return NULL;
+    }
+
+    usize read = fread(buffer, 1, (usize)size, file);
+    fclose(file);
+    if (read != (usize)size)
+    {
+        printf("fread failed for %s\n", path);
+        free(buffer);
+        return NULL;
+    }
+
+    buffer[read] = '\0';
+    return buffer;
+}
+
+/**
+ * Load the shader files and create a shader program
+ *
+ * If the returned object is 0, the shaders could not be loaded
+ */
+gl_object shader_create(const char* vertex_shader_file, const char* fragment_shader_file)
+{
+    char* vertex_shader_source = file_load(vertex_shader_file);
+    if (vertex_shader_source == NULL)
+    {
+        return 0;
+    }
+
+    char* fragment_shader_source = file_load(fragment_shader_file);
+    if (fragment_shader_source == NULL)
+    {
+        free(vertex_shader_source);
+        return 0;
+    }
+
     gl_object vertex_shader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertex_shader, 1, &vertex_shader_code, NULL);
+    glShaderSource(vertex_shader, 1, (const char* const*)&vertex_shader_source, NULL);
     glCompileShader(vertex_shader);
 
     int vertex_shader_success = 0;
@@ -58,7 +110,7 @@ gl_object createShader(void)
     }
 
     gl_object fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragment_shader, 1, &fragment_shader_code, NULL);
+    glShaderSource(fragment_shader, 1, (const char* const*)&fragment_shader_source, NULL);
     glCompileShader(fragment_shader);
 
     int fragment_shader_success = 0;
@@ -86,6 +138,8 @@ gl_object createShader(void)
 
     glDeleteShader(vertex_shader);
     glDeleteShader(fragment_shader);
+    free(vertex_shader_source);
+    free(fragment_shader_source);
     return shader_program;
 }
 
@@ -121,9 +175,10 @@ int main(void)
     }
 
     float vertices[] = {
-        -0.5f, -0.5f, 0.0f,
-         0.5f, -0.5f, 0.0f,
-         0.0f,  0.5f, 0.0f
+        -0.5f, -0.5f,
+         0.5f, -0.5f,
+         0.5f,  0.5f,
+        -0.5f,  0.5f,
     }; 
 
     gl_object vertex_buffer = 0;
@@ -131,13 +186,25 @@ int main(void)
     glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-    gl_object shader_program = createShader();
+    u32 indices[] = {
+        0, 1, 2,
+        2, 3, 0,
+    };
+
+    gl_object index_buffer = 0;
+    glGenBuffers(1, &index_buffer);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+    gl_object shader_program = shader_create("shaders/basic.vert", "shaders/basic.frag");
 
     gl_object vertex_array = 0;
     glGenVertexArrays(1, &vertex_array);
     glBindVertexArray(vertex_array);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float[3]), NULL);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer);
+
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(float[2]), NULL);
     glEnableVertexAttribArray(0);
 
     for (;;)
@@ -161,7 +228,7 @@ int main(void)
 
         glUseProgram(shader_program);
         glBindVertexArray(vertex_array);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, NULL);
 
         SDL_GL_SwapWindow(window);
     }
