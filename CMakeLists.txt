@@ -14,11 +14,16 @@ endif()
 
 find_package(SDL3 CONFIG REQUIRED)
 
-add_library(glad STATIC vendor/glad/src/glad.c)
-target_include_directories(glad PUBLIC vendor/glad/include)
+add_executable(blockyblocks
+    src/main.c)
 
-add_executable(blockyblocks src/main.c)
-target_link_libraries(blockyblocks PRIVATE glad SDL3::SDL3)
+target_include_directories(blockyblocks
+    PUBLIC
+    vendor/glad/include)
+
+target_link_libraries(blockyblocks
+    PRIVATE
+    SDL3::SDL3)
 
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(blockyblocks PRIVATE -Wall -Wextra -Wpedantic)
