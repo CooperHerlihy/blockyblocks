@@ -1,0 +1,26 @@
+# Blocky Blocks
+
+A minecraft clone, written in C11 with OpenGL
+
+Uses GLAD to load OpenGL
+Uses SDL3 for platform independence
+
+Build:
+```
+Debug:
+cmake -G Ninja -B build/debug -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+    -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=mold \
+cmake --build build/debug
+build/debug/blockyblocks
+
+Release:
+cmake -G Ninja -B build/debug -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+    -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=mold \
+cmake --build build/release
+build/release/blockyblocks
+```
+
