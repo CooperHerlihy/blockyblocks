@@ -16,6 +16,7 @@
                 name = "blockyblocks";
 
                 packages = with pkgs; [
+                    clang-tools
                     cmake
                     ninja
                     mold
@@ -25,12 +26,12 @@
                     valgrind
 
                     (writeShellScriptBin "debug" ''
-                        cmake -G Ninja -B build/debug -DCMAKE_BUILD_TYPE=Debug \
+                        cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Debug \
                             -DCMAKE_C_COMPILER=clang \
                             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
                             -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=mold \
-                        && cmake --build build/debug \
-                        && build/debug/blockyblocks
+                        && cmake --build build \
+                        && build/blockyblocks
                     '')
                     (writeShellScriptBin "release" ''
                         cmake -G Ninja -B build/release -DCMAKE_BUILD_TYPE=Release \
