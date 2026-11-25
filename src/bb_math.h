@@ -1,24 +1,9 @@
 #ifndef BB_MATH_H
 #define BB_MATH_H
 
-#include <stdint.h>
-#include <stdlib.h>
+#include "bb.h"
+
 #include <math.h>
-
-typedef int8_t i8;
-typedef int16_t i16;
-typedef int32_t i32;
-typedef int64_t i64;
-
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-
-typedef float f32;
-typedef double f64;
-
-typedef size_t usize;
 
 typedef struct vec2 {
     f32 x, y;
@@ -346,6 +331,106 @@ static inline mat4 bb_mat4_div_scalar(mat4 l, f32 r)
     };
 }
 
+typedef struct quat {
+    f32 r, i, j, k;
+} quat;
+
+static inline quat bb_quat_identity(void)
+{
+    return (quat){1.0f, 0.0f, 0.0f, 0.0f};
+}
+
+static inline quat bb_quat_add(quat l, quat r)
+{
+    return (quat){l.r + r.r, l.i + r.i, l.j + r.j, l.k + r.k};
+}
+
+static inline quat bb_quat_sub(quat l, quat r)
+{
+    return (quat){l.r - r.r, l.i - r.i, l.j - r.j, l.k - r.k};
+}
+
+static inline quat bb_quat_mul(quat l, quat r)
+{
+    return (quat){
+        l.r * r.r - l.i * r.i - l.j * r.j - l.k * r.k,
+        l.r * r.i + l.i * r.r + l.j * r.k - l.k * r.j,
+        l.r * r.j - l.i * r.k + l.j * r.r + l.k * r.i,
+        l.r * r.k + l.i * r.j - l.j * r.i + l.k * r.r,
+    };
+}
+
+static inline quat bb_quat_conjugate(quat q)
+{
+    return (quat){q.r, -q.i, -q.j, -q.k};
+}
+
+static inline f32 bb_quat_length(quat q)
+{
+    return sqrtf(q.r * q.r + q.i * q.i + q.j * q.j + q.k * q.k);
+}
+
+static inline quat bb_quat_normalize(quat q)
+{
+    f32 len = bb_quat_length(q);
+    return (quat){q.r / len, q.i / len, q.j / len, q.k / len};
+}
+
+/**
+ * Axis must be normalized, angle in radians
+ */
+static inline quat bb_quat_from_axis_angle(vec3 axis, f32 angleRad)
+{
+    f32 half = angleRad * 0.5f;
+    f32 s = sinf(half);
+    return (quat){cosf(half), axis.x * s, axis.y * s, axis.z * s};
+}
+
+/**
+ * Rotation taking normalized vector a to normalized vector b
+ */
+static inline quat bb_quat_from_difference(vec3 a, vec3 b)
+{
+    vec3 half = bb_vec3_normalize(bb_vec3_add(a, b));
+    f32 r = bb_vec3_dot(a, half);
+    return bb_quat_normalize((quat){r, a.y * half.z - a.z * half.y, a.z * half.x - a.x * half.z, a.x * half.y - a.y * half.x});
+}
+
+static inline vec3 bb_quat_rotate_vec3(quat q, vec3 v)
+{
+    quat c = bb_quat_conjugate(q);
+    quat p = (quat){0.0f, v.x, v.y, v.z};
+    quat t = bb_quat_mul(bb_quat_mul(q, p), c);
+    return (vec3){t.i, t.j, t.k};
+}
+
+static inline vec4 bb_quat_rotate_vec4(quat q, vec4 v)
+{
+    quat c = bb_quat_conjugate(q);
+    quat p = (quat){0.0f, v.x, v.y, v.z};
+    quat t = bb_quat_mul(bb_quat_mul(q, p), c);
+    return (vec4){t.i, t.j, t.k, v.w};
+}
+
+static inline mat3 bb_quat_rotate_mat3(quat q, mat3 m)
+{
+    return (mat3){
+        bb_quat_rotate_vec3(q, m.x),
+        bb_quat_rotate_vec3(q, m.y),
+        bb_quat_rotate_vec3(q, m.z),
+    };
+}
+
+static inline mat4 bb_quat_rotate_mat4(quat q, mat4 m)
+{
+    return (mat4){
+        bb_quat_rotate_vec4(q, m.x),
+        bb_quat_rotate_vec4(q, m.y),
+        bb_quat_rotate_vec4(q, m.z),
+        bb_quat_rotate_vec4(q, m.w),
+    };
+}
+
 static inline mat4 bb_mat4_perspective(f32 aspect, f32 fovRad, f32 nearPlane, f32 farPlane)
 {
     f32 f = 1.0f / tanf(fovRad * 0.5f);
@@ -355,6 +440,17 @@ static inline mat4 bb_mat4_perspective(f32 aspect, f32 fovRad, f32 nearPlane, f3
         (vec4){0.0f, 0.0f, (farPlane + nearPlane) / (nearPlane - farPlane), -1.0f},
         (vec4){0.0f, 0.0f, (2.0f * farPlane * nearPlane) / (nearPlane - farPlane), 0.0f},
     };
+}
+
+static inline mat4 bb_mat4_view(vec3 position, quat rotation)
+{
+    mat4 ret = {0};
+    ret.x.x = 1.0f;
+    ret.y.y = 1.0f;
+    ret.z.z = 1.0f;
+    ret.w = (vec4){-position.x, -position.y, -position.z, 1.0f};
+    ret = bb_quat_rotate_mat4(bb_quat_conjugate(rotation), ret);
+    return ret;
 }
 
 #endif // BB_MATH_H

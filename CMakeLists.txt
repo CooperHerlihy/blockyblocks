@@ -15,6 +15,8 @@ endif()
 find_package(SDL3 CONFIG REQUIRED)
 
 add_executable(blockyblocks
+    src/bb_input.c
+    src/bb_shader.c
     src/bb_main.c)
 
 target_include_directories(blockyblocks

@@ -1,15 +1,11 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <stddef.h>
-
-#include "bb_math.h"
-
-#include <SDL3/SDL.h>
-
 #define GLAD_GL_IMPLEMENTATION
-#include <glad/gl.h>
+#include "bb.h"
+#include "bb_math.h"
+#include "bb_input.h"
+#include "bb_shader.h"
 
-typedef GLuint gl_object;
+#include <stdio.h>
+#include <stddef.h>
 
 static const u32 grass_block_pixels[8][8] = {
     { 0xFF5AC079, 0xFF4FAF6F, 0xFF5AC079, 0xFF67CB8A, 0xFF5AC079, 0xFF4FAF6F, 0xFF5AC079, 0xFF4FAF6F },
@@ -22,258 +18,319 @@ static const u32 grass_block_pixels[8][8] = {
     { 0xFF4FAF6F, 0xFF5AC079, 0xFF4FAF6F, 0xFF5AC079, 0xFF4FAF6F, 0xFF4FAF6F, 0xFF5AC079, 0xFF67CB8A },
 };
 
-static SDL_Window* window = NULL;
-static u32 window_width = 0;
-static u32 window_height = 0;
+static vec3 player_position = {0};
+static quat player_rotation = {1.0f, 0.0f, 0.0f, 0.0f};
 
-static bool was_quit = false;
-static bool window_was_resized = false;
-
-enum bb_button {
-    bb_button_up,
-    bb_button_down,
-    bb_button_left,
-    bb_button_right,
-    bb_button_forward,
-    bb_button_back,
-    bb_button_count
+enum bb_block {
+    bb_block_air = 0,
+    bb_block_grass,
+    bb_block_count,
 };
 
-static bool button_pressed[bb_button_count];
-static bool button_released[bb_button_count];
-static bool button_held[bb_button_count];
+#define bb_chunk_height 64
+#define bb_chunk_width 16
+#define bb_chunk_depth 16
 
-static f32 delta_time = 0.0f;
+struct bb_chunk {
+    enum bb_block blocks[bb_chunk_height][bb_chunk_depth][bb_chunk_width];
+};
 
-void bb_input_update(void)
+struct bb_chunk_vertex {
+    vec3 pos;
+    vec2 uv;
+};
+
+struct bb_chunk_mesh {
+    usize vertex_count;
+    struct bb_chunk_vertex* vertices;
+    usize index_count;
+    u32* indices;
+
+    gl_object vertex_array;
+    gl_object vertex_buffer;
+    gl_object index_buffer;
+};
+
+/**
+ * Allocates a new mesh from the chunk
+ *
+ * Must be destroyed
+ */
+static struct bb_chunk_mesh bb_chunk_mesh_create(struct bb_chunk* chunk)
 {
-    window_was_resized = false;
+    usize vertex_capacity = 128;
+    usize vertex_count = 0;
+    struct bb_chunk_vertex* vertices = malloc(vertex_capacity * sizeof(*vertices));
 
-    memset(button_pressed, 0, sizeof(button_pressed));
-    memset(button_released, 0, sizeof(button_pressed));
+    usize index_capacity = 128;
+    usize index_count = 0;
+    u32* indices = malloc(index_capacity * sizeof(*indices));
 
-    SDL_Event event;
-    while (SDL_PollEvent(&event))
+    for (usize y = 0; y < bb_chunk_height; ++y)
     {
-        switch (event.type)
+        for (usize z = 0; z < bb_chunk_depth; ++z)
         {
-        case SDL_EVENT_QUIT:
-            was_quit = true;
-            break;
-        case SDL_EVENT_WINDOW_RESIZED:
-            window_was_resized = true;
-            window_width = event.window.data1;
-            window_height = event.window.data2;
-            break;
-        case SDL_EVENT_KEY_DOWN:
-        case SDL_EVENT_KEY_UP:
-        {
-            enum bb_button button = bb_button_count;
-            switch (event.key.key)
+            for (usize x = 0; x < bb_chunk_width; ++x)
             {
-            case SDLK_SPACE:
-                button = bb_button_up;
-                break;
-            case SDLK_LSHIFT:
-                button = bb_button_down;
-                break;
-            case SDLK_A:
-                button = bb_button_left;
-                break;
-            case SDLK_D:
-                button = bb_button_right;
-                break;
-            case SDLK_W:
-                button = bb_button_forward;
-                break;
-            case SDLK_S:
-                button = bb_button_back;
-                break;
-            }
-            if (event.type == SDL_EVENT_KEY_DOWN)
-            {
-                button_pressed[button] = true;
-                button_held[button] = true;
-            }
-            else
-            {
-                button_released[button] = true;
-                button_held[button] = false;
+                if (chunk->blocks[y][z][x] != bb_block_air)
+                {
+                    f32 cx = (f32)x;
+                    f32 cy = (f32)y;
+                    f32 cz = (f32)z;
+
+                    if (y == 0 || chunk->blocks[y - 1][z][x] == bb_block_air)
+                    {
+                        if (vertex_count + 4 > vertex_capacity)
+                        {
+                            vertex_capacity *= 2;
+                            vertices = realloc(vertices, vertex_capacity * sizeof(*vertices));
+                        }
+                        if (index_count + 6 > index_capacity)
+                        {
+                            index_capacity *= 2;
+                            indices = realloc(indices, index_capacity * sizeof(*indices));
+                        }
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx - 0.5f, cy - 0.5f, cz + 0.5f},
+                            (vec2){0.0f, 0.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx - 0.5f, cy - 0.5f, cz - 0.5f},
+                            (vec2){1.0f, 0.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx + 0.5f, cy - 0.5f, cz - 0.5f},
+                            (vec2){1.0f, 1.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx + 0.5f, cy - 0.5f, cz + 0.5f},
+                            (vec2){0.0f, 1.0f},
+                        };
+                        indices[index_count++] = vertex_count - 4;
+                        indices[index_count++] = vertex_count - 3;
+                        indices[index_count++] = vertex_count - 2;
+                        indices[index_count++] = vertex_count - 4;
+                        indices[index_count++] = vertex_count - 2;
+                        indices[index_count++] = vertex_count - 1;
+                    }
+                    if (y == bb_chunk_height - 1 || chunk->blocks[y + 1][z][x] == bb_block_air)
+                    {
+                        if (vertex_count + 4 > vertex_capacity)
+                        {
+                            vertex_capacity *= 2;
+                            vertices = realloc(vertices, vertex_capacity * sizeof(*vertices));
+                        }
+                        if (index_count + 6 > index_capacity)
+                        {
+                            index_capacity *= 2;
+                            indices = realloc(indices, index_capacity * sizeof(*indices));
+                        }
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx - 0.5f, cy + 0.5f, cz - 0.5f},
+                            (vec2){0.0f, 0.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx - 0.5f, cy + 0.5f, cz + 0.5f},
+                            (vec2){1.0f, 0.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx + 0.5f, cy + 0.5f, cz + 0.5f},
+                            (vec2){1.0f, 1.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx + 0.5f, cy + 0.5f, cz - 0.5f},
+                            (vec2){0.0f, 1.0f},
+                        };
+                        indices[index_count++] = vertex_count - 4;
+                        indices[index_count++] = vertex_count - 3;
+                        indices[index_count++] = vertex_count - 2;
+                        indices[index_count++] = vertex_count - 4;
+                        indices[index_count++] = vertex_count - 2;
+                        indices[index_count++] = vertex_count - 1;
+                    }
+                    if (z == 0 || chunk->blocks[y][z - 1][x] == bb_block_air)
+                    {
+                        if (vertex_count + 4 > vertex_capacity)
+                        {
+                            vertex_capacity *= 2;
+                            vertices = realloc(vertices, vertex_capacity * sizeof(*vertices));
+                        }
+                        if (index_count + 6 > index_capacity)
+                        {
+                            index_capacity *= 2;
+                            indices = realloc(indices, index_capacity * sizeof(*indices));
+                        }
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx + 0.5f, cy - 0.5f, cz - 0.5f},
+                            (vec2){0.0f, 0.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx - 0.5f, cy - 0.5f, cz - 0.5f},
+                            (vec2){1.0f, 0.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx - 0.5f, cy + 0.5f, cz - 0.5f},
+                            (vec2){1.0f, 1.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx + 0.5f, cy + 0.5f, cz - 0.5f},
+                            (vec2){0.0f, 1.0f},
+                        };
+                        indices[index_count++] = vertex_count - 4;
+                        indices[index_count++] = vertex_count - 3;
+                        indices[index_count++] = vertex_count - 2;
+                        indices[index_count++] = vertex_count - 4;
+                        indices[index_count++] = vertex_count - 2;
+                        indices[index_count++] = vertex_count - 1;
+                    }
+                    if (z == bb_chunk_depth - 1 || chunk->blocks[y][z + 1][x] == bb_block_air)
+                    {
+                        if (vertex_count + 4 > vertex_capacity)
+                        {
+                            vertex_capacity *= 2;
+                            vertices = realloc(vertices, vertex_capacity * sizeof(*vertices));
+                        }
+                        if (index_count + 6 > index_capacity)
+                        {
+                            index_capacity *= 2;
+                            indices = realloc(indices, index_capacity * sizeof(*indices));
+                        }
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx - 0.5f, cy - 0.5f, cz + 0.5f},
+                            (vec2){0.0f, 0.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx + 0.5f, cy - 0.5f, cz + 0.5f},
+                            (vec2){1.0f, 0.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx + 0.5f, cy + 0.5f, cz + 0.5f},
+                            (vec2){1.0f, 1.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx - 0.5f, cy + 0.5f, cz + 0.5f},
+                            (vec2){0.0f, 1.0f},
+                        };
+                        indices[index_count++] = vertex_count - 4;
+                        indices[index_count++] = vertex_count - 3;
+                        indices[index_count++] = vertex_count - 2;
+                        indices[index_count++] = vertex_count - 4;
+                        indices[index_count++] = vertex_count - 2;
+                        indices[index_count++] = vertex_count - 1;
+                    }
+                    if (x == 0 || chunk->blocks[y][z][x - 1] == bb_block_air)
+                    {
+                        if (vertex_count + 4 > vertex_capacity)
+                        {
+                            vertex_capacity *= 2;
+                            vertices = realloc(vertices, vertex_capacity * sizeof(*vertices));
+                        }
+                        if (index_count + 6 > index_capacity)
+                        {
+                            index_capacity *= 2;
+                            indices = realloc(indices, index_capacity * sizeof(*indices));
+                        }
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx - 0.5f, cy - 0.5f, cz - 0.5f},
+                            (vec2){0.0f, 0.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx - 0.5f, cy - 0.5f, cz + 0.5f},
+                            (vec2){1.0f, 0.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx - 0.5f, cy + 0.5f, cz + 0.5f},
+                            (vec2){1.0f, 1.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx - 0.5f, cy + 0.5f, cz - 0.5f},
+                            (vec2){0.0f, 1.0f},
+                        };
+                        indices[index_count++] = vertex_count - 4;
+                        indices[index_count++] = vertex_count - 3;
+                        indices[index_count++] = vertex_count - 2;
+                        indices[index_count++] = vertex_count - 4;
+                        indices[index_count++] = vertex_count - 2;
+                        indices[index_count++] = vertex_count - 1;
+                    }
+                    if (x == bb_chunk_width - 1 || chunk->blocks[y][z][x + 1] == bb_block_air)
+                    {
+                        if (vertex_count + 4 > vertex_capacity)
+                        {
+                            vertex_capacity *= 2;
+                            vertices = realloc(vertices, vertex_capacity * sizeof(*vertices));
+                        }
+                        if (index_count + 6 > index_capacity)
+                        {
+                            index_capacity *= 2;
+                            indices = realloc(indices, index_capacity * sizeof(*indices));
+                        }
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx + 0.5f, cy - 0.5f, cz + 0.5f},
+                            (vec2){0.0f, 0.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx + 0.5f, cy - 0.5f, cz - 0.5f},
+                            (vec2){1.0f, 0.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx + 0.5f, cy + 0.5f, cz - 0.5f},
+                            (vec2){1.0f, 1.0f},
+                        };
+                        vertices[vertex_count++] = (struct bb_chunk_vertex){
+                            (vec3){cx + 0.5f, cy + 0.5f, cz + 0.5f},
+                            (vec2){0.0f, 1.0f},
+                        };
+                        indices[index_count++] = vertex_count - 4;
+                        indices[index_count++] = vertex_count - 3;
+                        indices[index_count++] = vertex_count - 2;
+                        indices[index_count++] = vertex_count - 4;
+                        indices[index_count++] = vertex_count - 2;
+                        indices[index_count++] = vertex_count - 1;
+                    }
+                }
             }
         }
-        }
     }
+
+    gl_object vertex_array = 0;
+    glGenVertexArrays(1, &vertex_array);
+    glBindVertexArray(vertex_array);
+
+    gl_object vertex_buffer = 0;
+    glGenBuffers(1, &vertex_buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+    glBufferData(GL_ARRAY_BUFFER, vertex_count * sizeof(*vertices), vertices, GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(struct bb_chunk_vertex), (void*)offsetof(struct bb_chunk_vertex, pos));
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(struct bb_chunk_vertex), (void*)offsetof(struct bb_chunk_vertex, uv));
+    glEnableVertexAttribArray(1);
+
+    gl_object index_buffer = 0;
+    glGenBuffers(1, &index_buffer);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, index_count * sizeof(*indices), indices, GL_STATIC_DRAW);
+
+    return (struct bb_chunk_mesh){
+        vertex_count,
+        vertices,
+        index_count,
+        indices,
+        vertex_array,
+        vertex_buffer,
+        index_buffer,
+    };
 }
 
-/**
- * Load a file from path into a buffer
- *
- * If the returned buffer in NULL, the file could not be loaded
- * If the returned buffer is not NULL, it must be freed
- */
-static char* bb_file_load(const char* path)
+static void bb_chunk_mesh_destroy(struct bb_chunk_mesh* mesh)
 {
-    FILE* file = fopen(path, "rb");
-    if (file == NULL)
-    {
-        printf("fopen failed to open %s\n", path);
-        return NULL;
-    }
-
-    if (fseek(file, 0, SEEK_END) != 0)
-    {
-        printf("fseek failed for %s\n", path);
-        fclose(file);
-        return NULL;
-    }
-
-    long size = ftell(file);
-    if (size < 0)
-    {
-        printf("ftell failed for %s\n", path);
-        fclose(file);
-        return NULL;
-    }
-    rewind(file);
-
-    char* buffer = malloc((usize)size + 1);
-    if (buffer == NULL)
-    {
-        printf("malloc failed for %s\n", path);
-        fclose(file);
-        return NULL;
-    }
-
-    usize read = fread(buffer, 1, (usize)size, file);
-    fclose(file);
-    if (read != (usize)size)
-    {
-        printf("fread failed for %s\n", path);
-        free(buffer);
-        return NULL;
-    }
-
-    buffer[read] = '\0';
-    return buffer;
-}
-
-/**
- * Search for a substring
- */
-static usize bb_string_find_sub(const char* str, const char* sub)
-{
-    if (sub == NULL)
-        return 0;
-    if (str == NULL)
-        return (usize)-1;
-
-    usize str_length = strlen(str);
-    usize sub_length = strlen(sub);
-    if (str_length < sub_length)
-        return (usize)-1;
-
-    usize pos = 0;
-    while (memcmp(str + pos, sub, sub_length) != 0)
-    {
-        if ((str + pos)[sub_length] == '\0')
-            return (usize)-1;
-        ++pos;
-    }
-
-    return pos;
-}
-
-/**
- * Load the shader files and create a shader program
- *
- * If the returned object is 0, the shaders could not be loaded
- */
-static gl_object bb_shader_create(const char* shader_file)
-{
-    char* shader_source = bb_file_load(shader_file);
-    if (shader_source == NULL)
-    {
-        return 0;
-    }
-
-    usize vertex_shader_pos = bb_string_find_sub(shader_source, "begin_vertex_shader");
-    if (vertex_shader_pos == (usize)-1)
-    {
-        printf("Could not find \"begin_vertex_shader\" in %s\n", shader_file);
-        return 0;
-    }
-    vertex_shader_pos += sizeof("begin_vertex_shader");
-
-    usize vertex_shader_end = bb_string_find_sub(shader_source, "end_vertex_shader");
-    if (vertex_shader_end == (usize)-1)
-    {
-        printf("Could not find \"end_vertex_shader\" in %s\n", shader_file);
-        return 0;
-    }
-
-    gl_object vertex_shader = glCreateShader(GL_VERTEX_SHADER);
-    const GLchar* vertex_shader_source = shader_source + vertex_shader_pos;
-    const GLint vertex_shader_length = vertex_shader_end - vertex_shader_pos;
-    glShaderSource(vertex_shader, 1, &vertex_shader_source, &vertex_shader_length);
-    glCompileShader(vertex_shader);
-
-    int vertex_shader_success = 0;
-    glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &vertex_shader_success);
-    if (!vertex_shader_success)
-    {
-        char log[512] = {0};
-        glGetShaderInfoLog(vertex_shader, 512, NULL, log);
-        printf("glCompileShader failed to compile vertex shader: %s", log);
-    }
-
-    usize fragment_shader_pos = bb_string_find_sub(shader_source, "begin_fragment_shader");
-    if (fragment_shader_pos == (usize)-1)
-    {
-        printf("Could not find \"begin_fragment_shader\" in %s\n", shader_file);
-        return 0;
-    }
-    fragment_shader_pos += sizeof("begin_fragment_shader");
-
-    usize fragment_shader_end = bb_string_find_sub(shader_source, "end_fragment_shader");
-    if (fragment_shader_end == (usize)-1)
-    {
-        printf("Could not find \"end_fragment_shader\" in %s\n", shader_file);
-        return 0;
-    }
-
-    gl_object fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
-    const GLchar* fragment_shader_source = shader_source + fragment_shader_pos;
-    const GLint fragment_shader_length = fragment_shader_end - fragment_shader_pos;
-    glShaderSource(fragment_shader, 1, &fragment_shader_source, &fragment_shader_length);
-    glCompileShader(fragment_shader);
-
-    int fragment_shader_success = 0;
-    glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &fragment_shader_success);
-    if (!fragment_shader_success)
-    {
-        char log[512] = {0};
-        glGetShaderInfoLog(fragment_shader, 512, NULL, log);
-        printf("glCompileShader failed to compile fragment shader: %s", log);
-    }
-
-    gl_object shader_program = glCreateProgram();
-    glAttachShader(shader_program, vertex_shader);
-    glAttachShader(shader_program, fragment_shader);
-    glLinkProgram(shader_program);
-
-    int link_shader_success = 0;
-    glGetShaderiv(shader_program, GL_LINK_STATUS, &link_shader_success);
-    if (!link_shader_success)
-    {
-        char log[512] = {0};
-        glGetShaderInfoLog(shader_program, 512, NULL, log);
-        printf("glCompileShader failed to link shaders: %s", log);
-    }
-
-    glDeleteShader(vertex_shader);
-    glDeleteShader(fragment_shader);
-    free(shader_source);
-    return shader_program;
+    glDeleteVertexArrays(1, &mesh->vertex_array);
+    glDeleteBuffers(1, &mesh->vertex_buffer);
+    glDeleteBuffers(1, &mesh->index_buffer);
+    free(mesh->vertices);
+    free(mesh->indices);
+    *mesh = (struct bb_chunk_mesh){0};
 }
 
 int main(void)
@@ -287,7 +344,7 @@ int main(void)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
-    window = SDL_CreateWindow("Blocky Blocks", 800, 600, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+    SDL_Window* window = SDL_CreateWindow("Blocky Blocks", 800, 600, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     if (window == NULL)
     {
         printf("SDL_CreateWindow failed: %s\n", SDL_GetError());
@@ -309,45 +366,24 @@ int main(void)
 
     gl_object shader_program = bb_shader_create("shaders/basic.glsl");
 
-    mat4 proj = bb_mat4_identity();
-    mat4 view = bb_mat4_identity();
-    mat4 model = bb_mat4_identity();
+    struct bb_chunk chunk = {0};
+    for (usize y = 27; y < 29; ++y)
+    {
+        for (usize z = 0; z < bb_chunk_depth; ++z)
+        {
+            for (usize x = 0; x < bb_chunk_width; ++x)
+            {
+                if (x < 5)
+                    chunk.blocks[y][z][x] = bb_block_grass;
+                else if (x < 11)
+                    chunk.blocks[y + 1][z][x] = bb_block_grass;
+                else
+                    chunk.blocks[y + 2][z][x] = bb_block_grass;
+            }
+        }
+    }
 
-    gl_object vertex_array = 0;
-    glGenVertexArrays(1, &vertex_array);
-    glBindVertexArray(vertex_array);
-
-    struct vertex {
-        vec3 pos;
-        vec2 uv;
-    };
-
-    struct vertex vertices[] = {
-        {{-0.5f,  0.5f, -1.0f}, {0.0f, 0.0f}},
-        {{ 0.5f,  0.5f, -1.0f}, {1.0f, 0.0f}},
-        {{ 0.5f, -0.5f, -1.0f}, {1.0f, 1.0f}},
-        {{-0.5f, -0.5f, -1.0f}, {0.0f, 1.0f}},
-    }; 
-
-    gl_object vertex_buffer = 0;
-    glGenBuffers(1, &vertex_buffer);
-    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(struct vertex), (void*)offsetof(struct vertex, pos));
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(struct vertex), (void*)offsetof(struct vertex, uv));
-    glEnableVertexAttribArray(1);
-
-    u32 indices[] = {
-        0, 1, 2,
-        2, 3, 0,
-    };
-
-    gl_object index_buffer = 0;
-    glGenBuffers(1, &index_buffer);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+    struct bb_chunk_mesh mesh = bb_chunk_mesh_create(&chunk);
 
     gl_object grass_block_texture = 0;
     glGenTextures(1, &grass_block_texture);
@@ -356,49 +392,70 @@ int main(void)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    u64 tick_prev = SDL_GetPerformanceCounter();
-    const u64 tick_frequency = SDL_GetPerformanceFrequency();
-    while (!was_quit)
-    {
-        u64 tick_current = SDL_GetPerformanceCounter();
-        delta_time = (f32)(tick_current - tick_prev) / (f32)tick_frequency;
-        tick_prev = tick_current;
+    mat4 proj = bb_mat4_identity();
 
+    f32 print_timer = 0.0f;
+    u32 frame_count = 0;
+    while (!bb_was_quit())
+    {
         bb_input_update();
-        if (window_was_resized)
+        ++frame_count;
+        print_timer += bb_delta_time();
+        if (print_timer > 1.0f)
         {
-            glViewport(0, 0, window_width, window_height);
-            proj = bb_mat4_perspective((f32)window_width / (f32)window_height, 3.14f / 2.0f, 0.1f, 100.0f);
+            printf("Frame time: %fms\n", print_timer / frame_count * 1.e3f);
+            print_timer = 0.0f;
         }
 
-        if (button_held[bb_button_up])
-            view.w.y -= 1.0f * delta_time;
-        if (button_held[bb_button_down])
-            view.w.y += 1.0f * delta_time;
-        if (button_held[bb_button_right])
-            view.w.x -= 1.0f * delta_time;
-        if (button_held[bb_button_left])
-            view.w.x += 1.0f * delta_time;
-        if (button_held[bb_button_back])
-            view.w.z -= 1.0f * delta_time;
-        if (button_held[bb_button_forward])
-            view.w.z += 1.0f * delta_time;
+        if (bb_window_resized())
+        {
+            glViewport(0, 0, bb_window_width(), bb_window_height());
+            proj = bb_mat4_perspective((f32)bb_window_width() / (f32)bb_window_height(), 3.14f / 2.0f, 0.1f, 100.0f);
+        }
+
+        if (bb_button_held(bb_button_primary) && (bb_mouse_delta().x != 0.0f || bb_mouse_delta().y != 0.0f))
+        {
+            quat rot_x = bb_quat_from_axis_angle((vec3){0.0f, -1.0f, 0.0f}, bb_mouse_delta().x * 0.003f);
+            quat rot_y = bb_quat_from_axis_angle((vec3){-1.0f, 0.0f, 0.0f}, bb_mouse_delta().y * 0.003f);
+            player_rotation = bb_quat_mul(rot_x, bb_quat_mul(player_rotation, rot_y));
+        }
+
+        vec3 movement = {0};
+        movement.x += bb_button_held(bb_button_right) - bb_button_held(bb_button_left);
+        movement.y += bb_button_held(bb_button_up) - bb_button_held(bb_button_down);
+        movement.z += bb_button_held(bb_button_back) - bb_button_held(bb_button_forward);
+
+        if (movement.x != 0.0f || movement.y != 0.0f || movement.z != 0.0f)
+        {
+            vec3 rotated = bb_quat_rotate_vec3(player_rotation, (vec3){movement.x, 0.0f, movement.z});
+            vec3 dir = bb_vec3_normalize((vec3){rotated.x, movement.y, rotated.z});
+            vec3 delta = bb_vec3_mul(dir, 10.0f * bb_delta_time());
+            player_position = bb_vec3_add(player_position, delta);
+        }
 
         glClearColor(0.1f, 0.3f, 0.3f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glUseProgram(shader_program);
 
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_CULL_FACE);
+
         glUniformMatrix4fv(glGetUniformLocation(shader_program, "uProj"), 1, false, (f32*)&proj);
+
+        mat4 view = bb_mat4_view(player_position, player_rotation);
         glUniformMatrix4fv(glGetUniformLocation(shader_program, "uView"), 1, false, (f32*)&view);
+
+        mat4 model = bb_mat4_identity();
+        model.w = (vec4){-8.0f, -32.0f, -8.0f, 1.0f};
         glUniformMatrix4fv(glGetUniformLocation(shader_program, "uModel"), 1, false, (f32*)&model);
 
         glUniform1i(glGetUniformLocation(shader_program, "uTex"), 0);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, grass_block_texture);
 
-        glBindVertexArray(vertex_array);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, NULL);
+        glBindVertexArray(mesh.vertex_array);
+        glDrawElements(GL_TRIANGLES, mesh.index_count, GL_UNSIGNED_INT, NULL);
 
         SDL_GL_SwapWindow(window);
     }

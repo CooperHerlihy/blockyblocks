@@ -16,7 +16,7 @@ cmake --build build
 build/blockyblocks
 
 Release:
-cmake -G Ninja -B build/debug -DCMAKE_BUILD_TYPE=Release \
+cmake -G Ninja -B build/release -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_C_COMPILER_LAUNCHER=ccache \
     -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=mold \
