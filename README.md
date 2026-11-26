@@ -14,8 +14,6 @@ To build:
 - SDL3 development package
 - Optional: `ccache` and the `mold` linker for faster builds.
 
-GLAD is vendored in `vendor/glad`.
-
 ## Building
 
 ### Linux
@@ -62,10 +60,13 @@ and `ninja`.
 
 **Open the Visual Studio x64 developer shell before compiling** — without
 it, `cl.exe`, `cmake` and `ninja` are not on `PATH`. Either launch the
-"x64 Native Tools Command Prompt for VS 2022" from the Start menu, or run
-this once in any PowerShell window:
+"x64 Native Tools Command Prompt for VS 2022" from the Start menu, or start one
+from a Command Prompt or PowerShell
 
-```powershell
+```
+Command Prompt:
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+PowerShell:
 & "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64
 ```
 
