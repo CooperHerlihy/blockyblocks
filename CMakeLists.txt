@@ -26,16 +26,38 @@ target_include_directories(blockyblocks
 
 target_link_libraries(blockyblocks
     PRIVATE
-    m
     SDL3::SDL3)
 
-if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
-    target_compile_options(blockyblocks PRIVATE -Wall -Wextra -Wpedantic)
+# libm is a separate library on Unix; on Windows the math functions are in
+# the CRT and there is no libm to link.
+if(UNIX)
+    target_link_libraries(blockyblocks PRIVATE m)
 endif()
 
-# Debug builds: symbols plus a light optimization level that keeps the code
-# debuggable (-Og preserves variable mappings and stepping order).
-target_compile_options(blockyblocks PRIVATE
-    $<$<CONFIG:Debug>:-g>
-    $<$<CONFIG:Debug>:-Og>)
+# On Windows, copy SDL3.dll next to the executable so it can be run
+# directly from the build directory.
+if(WIN32 AND TARGET SDL3::SDL3-shared)
+    add_custom_command(TARGET blockyblocks POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:SDL3::SDL3-shared>
+            $<TARGET_FILE_DIR:blockyblocks>
+        VERBATIM)
+endif()
+
+# MSVC fopen and friends raise deprecation warnings that are treated as
+# errors unless suppressed.
+if(MSVC)
+    target_compile_definitions(blockyblocks PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_compile_options(blockyblocks PRIVATE /W4)
+endif()
+
+if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU" AND NOT CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    target_compile_options(blockyblocks PRIVATE -Wall -Wextra -Wpedantic)
+
+    # Debug builds: symbols plus a light optimization level that keeps the code
+    # debuggable (-Og preserves variable mappings and stepping order).
+    target_compile_options(blockyblocks PRIVATE
+        $<$<CONFIG:Debug>:-g>
+        $<$<CONFIG:Debug>:-Og>)
+endif()
 

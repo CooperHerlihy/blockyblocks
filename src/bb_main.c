@@ -242,7 +242,13 @@ int main(void)
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, crosshair_index_buffer);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(crosshair_indices), crosshair_indices, GL_STATIC_DRAW);
 
-    mat4 proj = bb_mat4_identity();
+    mat4 proj = {0};
+    {
+        int width, height;
+        SDL_GetWindowSize(window, &width, &height);
+        glViewport(0, 0, width, height);
+        proj = bb_mat4_perspective((f32)width / (f32)height, 3.14f / 2.0f, 0.1f, 100.0f);
+    }
 
     f32 print_timer = 0.0f;
     u32 frame_count = 0;
