@@ -2,6 +2,8 @@
 
 A Minecraft clone written in C99 with OpenGL.
 
+![Screenshot](resources/blocky_blocks_screenshot.png)
+
 ## Dependencies
 
 To build:
