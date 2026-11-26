@@ -16,6 +16,7 @@ find_package(SDL3 CONFIG REQUIRED)
 
 add_executable(blockyblocks
     src/bb_input.c
+    src/bb_world.c
     src/bb_shader.c
     src/bb_main.c)
 
@@ -31,3 +32,10 @@ target_link_libraries(blockyblocks
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(blockyblocks PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+# Debug builds: symbols plus a light optimization level that keeps the code
+# debuggable (-Og preserves variable mappings and stepping order).
+target_compile_options(blockyblocks PRIVATE
+    $<$<CONFIG:Debug>:-g>
+    $<$<CONFIG:Debug>:-Og>)
+

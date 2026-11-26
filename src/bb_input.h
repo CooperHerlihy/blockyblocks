@@ -16,14 +16,10 @@ enum bb_button {
     bb_button_count
 };
 
-/**
- * Process all inputs this frame
- */
+// Process all inputs this frame
 void bb_input_update(void);
 
-/**
- * Returns the time in seconds between the last two calls to bb_input_update
- */
+// Returns the time in seconds between the last two calls to bb_input_update
 f32 bb_delta_time(void);
 
 bool bb_was_quit(void);

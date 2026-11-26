@@ -164,7 +164,7 @@ gl_object bb_shader_create(const char* shader_file)
     if (!link_shader_success)
     {
         char log[512] = {0};
-        glGetShaderInfoLog(shader_program, 512, NULL, log);
+        glGetProgramInfoLog(shader_program, 512, NULL, log);
         printf("glCompileShader failed to link shaders: %s", log);
     }
 

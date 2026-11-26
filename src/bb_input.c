@@ -26,7 +26,7 @@ void bb_input_update(void)
     window_resized = false;
     mouse_delta = (vec2){0};
     memset(button_pressed, 0, sizeof(button_pressed));
-    memset(button_released, 0, sizeof(button_pressed));
+    memset(button_released, 0, sizeof(button_released));
 
     SDL_Event event;
     while (SDL_PollEvent(&event))

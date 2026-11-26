@@ -41,6 +41,19 @@
                         && cmake --build build/release \
                         && build/release/blockyblocks
                     '')
+                    (writeShellScriptBin "san" ''
+                        cmake -G Ninja -B build/san -DCMAKE_BUILD_TYPE=Debug \
+                            -DCMAKE_C_COMPILER=clang \
+                            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+                            -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=mold -fsanitize=address,undefined" \
+                            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+                        && cmake --build build/san \
+                        && build/san/blockyblocks
+                    '')
+                ];
+
+                LD_LIBRARY_PATH = with pkgs; lib.makeLibraryPath [
+                    libGL
                 ];
             };
         });
