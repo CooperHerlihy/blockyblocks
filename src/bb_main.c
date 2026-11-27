@@ -8,154 +8,179 @@
 #include <stdio.h>
 #include <stddef.h>
 
-static const u32 grass_block_pixels[8][8] = {
-    { 0xFF3E9158, 0xFF37804D, 0xFF3E9158, 0xFF37804D, 0xFF3E9158, 0xFF37804D, 0xFF3E9158, 0xFF37804D },
-    { 0xFF37804D, 0xFF67CB8A, 0xFF4FAF6F, 0xFF5AC079, 0xFF4FAF6F, 0xFF67CB8A, 0xFF4FAF6F, 0xFF3E9158 },
-    { 0xFF3E9158, 0xFF5AC079, 0xFF67CB8A, 0xFF4FAF6F, 0xFF5AC079, 0xFF4FAF6F, 0xFF67CB8A, 0xFF37804D },
-    { 0xFF37804D, 0xFF4FAF6F, 0xFF5AC079, 0xFF4FAF6F, 0xFF67CB8A, 0xFF5AC079, 0xFF4FAF6F, 0xFF3E9158 },
-    { 0xFF3E9158, 0xFF429A5E, 0xFF4FAF6F, 0xFF67CB8A, 0xFF4FAF6F, 0xFF5AC079, 0xFF4FAF6F, 0xFF37804D },
-    { 0xFF37804D, 0xFF5AC079, 0xFF67CB8A, 0xFF5AC079, 0xFF5AC079, 0xFF4FAF6F, 0xFF67CB8A, 0xFF3E9158 },
-    { 0xFF3E9158, 0xFF67CB8A, 0xFF4FAF6F, 0xFF4FAF6F, 0xFF67CB8A, 0xFF5AC079, 0xFF4FAF6F, 0xFF37804D },
-    { 0xFF37804D, 0xFF3E9158, 0xFF37804D, 0xFF3E9158, 0xFF37804D, 0xFF3E9158, 0xFF37804D, 0xFF3E9158 },
-};
-
-#define OUTLINE_QUADS 48
-
-static f32 outline_vertices[OUTLINE_QUADS * 4 * 3];
-static u32 outline_indices[OUTLINE_QUADS * 6];
-static u32 outline_quad_count = 0;
-
-static vec3 bb_outline_corner(i32 dir, i32 a, i32 b, f32 t, f32 va, f32 vb)
+static gl_object bb_grass_texture_generate(void)
 {
-    f32 components[3];
-    components[dir] = t;
-    components[a] = va;
-    components[b] = vb;
-    return (vec3){components[0], components[1], components[2]};
+    static const u32 grass_pixels[8][8] = {
+        { 0xFF3E9158, 0xFF37804D, 0xFF3E9158, 0xFF37804D, 0xFF3E9158, 0xFF37804D, 0xFF3E9158, 0xFF37804D },
+        { 0xFF37804D, 0xFF67CB8A, 0xFF4FAF6F, 0xFF5AC079, 0xFF4FAF6F, 0xFF67CB8A, 0xFF4FAF6F, 0xFF3E9158 },
+        { 0xFF3E9158, 0xFF5AC079, 0xFF67CB8A, 0xFF4FAF6F, 0xFF5AC079, 0xFF4FAF6F, 0xFF67CB8A, 0xFF37804D },
+        { 0xFF37804D, 0xFF4FAF6F, 0xFF5AC079, 0xFF4FAF6F, 0xFF67CB8A, 0xFF5AC079, 0xFF4FAF6F, 0xFF3E9158 },
+        { 0xFF3E9158, 0xFF429A5E, 0xFF4FAF6F, 0xFF67CB8A, 0xFF4FAF6F, 0xFF5AC079, 0xFF4FAF6F, 0xFF37804D },
+        { 0xFF37804D, 0xFF5AC079, 0xFF67CB8A, 0xFF5AC079, 0xFF5AC079, 0xFF4FAF6F, 0xFF67CB8A, 0xFF3E9158 },
+        { 0xFF3E9158, 0xFF67CB8A, 0xFF4FAF6F, 0xFF4FAF6F, 0xFF67CB8A, 0xFF5AC079, 0xFF4FAF6F, 0xFF37804D },
+        { 0xFF37804D, 0xFF3E9158, 0xFF37804D, 0xFF3E9158, 0xFF37804D, 0xFF3E9158, 0xFF37804D, 0xFF3E9158 },
+    };
+
+    gl_object grass_texture = 0;
+    glGenTextures(1, &grass_texture);
+    glBindTexture(GL_TEXTURE_2D, grass_texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 8, 8, 0, GL_RGBA, GL_UNSIGNED_BYTE, grass_pixels);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    return grass_texture;
 }
 
-static void bb_outline_push_quad(vec3 a, vec3 b, vec3 c, vec3 d, vec3 normal)
+static struct bb_mesh bb_outline_generate(f32 thickness)
 {
-    if (bb_vec3_dot(bb_vec3_cross(bb_vec3_sub(b, a), bb_vec3_sub(c, a)), normal) < 0.0f)
-    {
-        vec3 swap = b;
-        b = d;
-        d = swap;
-    }
-
-    vec3 corners[4] = {a, b, c, d};
-
-    u32 base = outline_quad_count * 4;
-    f32* out = outline_vertices + base * 3;
-    for (u32 corner = 0; corner < 4; ++corner)
-    {
-        out[corner * 3 + 0] = corners[corner].x;
-        out[corner * 3 + 1] = corners[corner].y;
-        out[corner * 3 + 2] = corners[corner].z;
-    }
-
-    u32* index = outline_indices + outline_quad_count * 6;
-    index[0] = base + 0;
-    index[1] = base + 1;
-    index[2] = base + 2;
-    index[3] = base + 0;
-    index[4] = base + 2;
-    index[5] = base + 3;
-
-    ++outline_quad_count;
-}
-
-static void bb_outline_generate(f32 size, f32 thickness)
-{
-    f32 half_size = size * 0.5f;
     f32 half_thickness = thickness * 0.5f;
 
-    outline_quad_count = 0;
+    vec3 axis_dirs[3 * 3] = {
+        {half_thickness, 0, 0}, {0, half_thickness, 0}, {0, 0, half_thickness},
+        {0, half_thickness, 0}, {0, 0, half_thickness}, {half_thickness, 0, 0},
+        {0, 0, half_thickness}, {half_thickness, 0, 0}, {0, half_thickness, 0},
+    };
 
-    static const i32 tangent_a[3] = {1, 2, 0};
-    static const i32 tangent_b[3] = {2, 0, 1};
+    static const vec3 lines[3 * 4 * 2] = {
+        // x axis
+        {0, 0, 0}, {1, 0, 0},
+        {0, 1, 0}, {1, 1, 0},
+        {0, 1, 1}, {1, 1, 1},
+        {0, 0, 1}, {1, 0, 1},
+        // y axis
+        {0, 0, 0}, {0, 1, 0},
+        {1, 0, 0}, {1, 1, 0},
+        {1, 0, 1}, {1, 1, 1},
+        {0, 0, 1}, {0, 1, 1},
+        // z axis
+        {0, 0, 0}, {0, 0, 1},
+        {1, 0, 0}, {1, 0, 1},
+        {1, 1, 0}, {1, 1, 1},
+        {0, 1, 0}, {0, 1, 1},
+    };
 
-    for (i32 dir = 0; dir < 3; ++dir)
+    vec3 vertices[3 * 4 * 8] = {0};
+    usize vpos = 0;
+    u32 indices[3 * 4 * 24] = {0};
+    usize ipos = 0;
+
+    for (u32 axis = 0; axis < 3; ++axis)
     {
-        i32 a = tangent_a[dir];
-        i32 b = tangent_b[dir];
+        vec3 dir = axis_dirs[axis * 3 + 0];
+        vec3 norm = axis_dirs[axis * 3 + 1];
+        vec3 tan = axis_dirs[axis * 3 + 2];
 
-        for (i32 sign_a = -1; sign_a <= 1; sign_a += 2)
+        for (u32 line = 0; line < 4; ++line)
         {
-            for (i32 sign_b = -1; sign_b <= 1; sign_b += 2)
-            {
-                f32 begin = -half_size - half_thickness;
-                f32 end = half_size + half_thickness;
-                f32 a_range[2] = {sign_a * half_size - half_thickness, sign_a * half_size + half_thickness};
-                f32 b_range[2] = {sign_b * half_size - half_thickness, sign_b * half_size + half_thickness};
-                vec3 outward_a = {0};
-                (&outward_a.x)[a] = (f32)sign_a;
-                vec3 outward_b = {0};
-                (&outward_b.x)[b] = (f32)sign_b;
+            vec3 front = bb_vec3_add(lines[axis * 4 * 2 + line * 2 + 1], dir);
+            vec3 back = bb_vec3_sub(lines[axis * 4 * 2 + line * 2 + 0], dir);
 
-                for (i32 shell = 0; shell < 2; ++shell)
-                {
-                    f32 sign = shell == 0 ? 1.0f : -1.0f;
-                    f32 plane_a = sign_a * (half_size + sign * half_thickness);
-                    f32 plane_b = sign_b * (half_size + sign * half_thickness);
-                    vec3 normal_a = bb_vec3_mul(outward_a, sign);
-                    vec3 normal_b = bb_vec3_mul(outward_b, sign);
+            vec3 front_top = bb_vec3_add(front, norm);
+            vec3 front_bottom = bb_vec3_sub(front, norm);
+            vec3 back_top = bb_vec3_add(back, norm);
+            vec3 back_bottom = bb_vec3_sub(back, norm);
 
-                    bb_outline_push_quad(
-                        bb_outline_corner(dir, a, b, begin, plane_a, b_range[0]),
-                        bb_outline_corner(dir, a, b, end, plane_a, b_range[0]),
-                        bb_outline_corner(dir, a, b, end, plane_a, b_range[1]),
-                        bb_outline_corner(dir, a, b, begin, plane_a, b_range[1]),
-                        normal_a);
+            vertices[vpos + 0] = bb_vec3_add(front_top, tan);
+            vertices[vpos + 1] = bb_vec3_sub(front_top, tan);
+            vertices[vpos + 2] = bb_vec3_add(front_bottom, tan);
+            vertices[vpos + 3] = bb_vec3_sub(front_bottom, tan);
+            vertices[vpos + 4] = bb_vec3_add(back_top, tan);
+            vertices[vpos + 5] = bb_vec3_sub(back_top, tan);
+            vertices[vpos + 6] = bb_vec3_add(back_bottom, tan);
+            vertices[vpos + 7] = bb_vec3_sub(back_bottom, tan);
 
-                    bb_outline_push_quad(
-                        bb_outline_corner(dir, a, b, begin, a_range[0], plane_b),
-                        bb_outline_corner(dir, a, b, end, a_range[0], plane_b),
-                        bb_outline_corner(dir, a, b, end, a_range[1], plane_b),
-                        bb_outline_corner(dir, a, b, begin, a_range[1], plane_b),
-                        normal_b);
-                }
-            }
+            // top
+            indices[ipos +  0] = (u32)vpos + 0;
+            indices[ipos +  1] = (u32)vpos + 1;
+            indices[ipos +  2] = (u32)vpos + 5;
+            indices[ipos +  3] = (u32)vpos + 5;
+            indices[ipos +  4] = (u32)vpos + 4;
+            indices[ipos +  5] = (u32)vpos + 0;
+            // bottom
+            indices[ipos +  6] = (u32)vpos + 2;
+            indices[ipos +  7] = (u32)vpos + 6;
+            indices[ipos +  8] = (u32)vpos + 7;
+            indices[ipos +  9] = (u32)vpos + 7;
+            indices[ipos + 10] = (u32)vpos + 3;
+            indices[ipos + 11] = (u32)vpos + 2;
+            // add
+            indices[ipos + 12] = (u32)vpos + 0;
+            indices[ipos + 13] = (u32)vpos + 4;
+            indices[ipos + 14] = (u32)vpos + 6;
+            indices[ipos + 15] = (u32)vpos + 6;
+            indices[ipos + 16] = (u32)vpos + 2;
+            indices[ipos + 17] = (u32)vpos + 0;
+            // sub
+            indices[ipos + 18] = (u32)vpos + 1;
+            indices[ipos + 19] = (u32)vpos + 3;
+            indices[ipos + 20] = (u32)vpos + 7;
+            indices[ipos + 21] = (u32)vpos + 7;
+            indices[ipos + 22] = (u32)vpos + 5;
+            indices[ipos + 23] = (u32)vpos + 1;
+
+            vpos += 8;
+            ipos += 24;
         }
     }
+
+    struct bb_mesh outline = {0};
+
+    glGenVertexArrays(1, &outline.vertex_array);
+    glBindVertexArray(outline.vertex_array);
+
+    glGenBuffers(1, &outline.vertex_buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, outline.vertex_buffer);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(f32), NULL);
+    glEnableVertexAttribArray(0);
+
+    glGenBuffers(1, &outline.index_buffer);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, outline.index_buffer);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+    outline.index_count = 3 * 4 * 24;
+
+    return outline;
 }
 
-#define CROSSHAIR_QUADS 2
-
-static f32 crosshair_vertices[CROSSHAIR_QUADS * 4 * 2];
-static u32 crosshair_indices[CROSSHAIR_QUADS * 6];
-
-static void bb_crosshair_generate(f32 length, f32 thickness)
+static struct bb_mesh bb_crosshair_generate(f32 length, f32 thickness)
 {
     f32 half_length = length * 0.5f;
     f32 half_thickness = thickness * 0.5f;
-    static const u32 corner_u[4] = {0, 1, 1, 0};
-    static const u32 corner_v[4] = {0, 0, 1, 1};
+    vec2 vertices[4 * 2] = {
+        {-half_thickness, -half_length},
+        { half_thickness, -half_length},
+        { half_thickness,  half_length},
+        {-half_thickness,  half_length},
+        {-half_length, -half_thickness},
+        { half_length, -half_thickness},
+        { half_length,  half_thickness},
+        {-half_length,  half_thickness},
+    };
 
-    for (u32 bar = 0; bar < CROSSHAIR_QUADS; ++bar)
-    {
-        f32 u_half = bar == 0 ? half_length : half_thickness;
-        f32 v_half = bar == 0 ? half_thickness : half_length;
+    static const u32 indices[6 * 2] = {
+        0, 1, 2, 2, 3, 0,
+        4, 5, 6, 6, 7, 4,
+    };
 
-        f32* out = crosshair_vertices + bar * 4 * 2;
-        for (u32 corner = 0; corner < 4; ++corner)
-        {
-            out[corner * 2 + 0] = corner_u[corner] ? u_half : -u_half;
-            out[corner * 2 + 1] = corner_v[corner] ? v_half : -v_half;
-        }
+    struct bb_mesh crosshair = {0};
 
-        u32* index = crosshair_indices + bar * 6;
-        index[0] = bar * 4 + 0;
-        index[1] = bar * 4 + 1;
-        index[2] = bar * 4 + 2;
-        index[3] = bar * 4 + 0;
-        index[4] = bar * 4 + 2;
-        index[5] = bar * 4 + 3;
-    }
+    glGenVertexArrays(1, &crosshair.vertex_array);
+    glBindVertexArray(crosshair.vertex_array);
+
+    glGenBuffers(1, &crosshair.vertex_buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, crosshair.vertex_buffer);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(f32), NULL);
+    glEnableVertexAttribArray(0);
+
+    glGenBuffers(1, &crosshair.index_buffer);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, crosshair.index_buffer);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+    crosshair.index_count = 6 * 2;
+
+    return crosshair;
 }
-
-static vec3 player_position = {0};
-static quat player_rotation = {1.0f, 0.0f, 0.0f, 0.0f};
 
 int main(void)
 {
@@ -192,68 +217,32 @@ int main(void)
         return 1;
     }
 
-    gl_object block_shader = bb_shader_create("shaders/blocks.glsl");
-
-    gl_object grass_block_texture = 0;
-    glGenTextures(1, &grass_block_texture);
-    glBindTexture(GL_TEXTURE_2D, grass_block_texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 8, 8, 0, GL_RGBA, GL_UNSIGNED_BYTE, grass_block_pixels);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
     struct bb_world world = bb_world_create(8, 8);
 
+    gl_object block_shader = bb_shader_create("shaders/blocks.glsl");
+    gl_object grass_texture = bb_grass_texture_generate();
 
     gl_object outline_shader = bb_shader_create("shaders/outline.glsl");
-    bb_outline_generate(1.0f, 0.015f);
-
-    gl_object outline_vertex_array = 0;
-    glGenVertexArrays(1, &outline_vertex_array);
-    glBindVertexArray(outline_vertex_array);
-
-    gl_object outline_vertex_buffer = 0;
-    glGenBuffers(1, &outline_vertex_buffer);
-    glBindBuffer(GL_ARRAY_BUFFER, outline_vertex_buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(outline_vertices), outline_vertices, GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(f32), NULL);
-    glEnableVertexAttribArray(0);
-
-    gl_object outline_index_buffer = 0;
-    glGenBuffers(1, &outline_index_buffer);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, outline_index_buffer);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(outline_indices), outline_indices, GL_STATIC_DRAW);
+    struct bb_mesh outline = bb_outline_generate(0.015f);
 
     gl_object crosshair_shader = bb_shader_create("shaders/crosshair.glsl");
-    bb_crosshair_generate(0.06f, 0.0065f);
+    struct bb_mesh crosshair = bb_crosshair_generate(0.06f, 0.0065f);
 
-    gl_object crosshair_vertex_array = 0;
-    glGenVertexArrays(1, &crosshair_vertex_array);
-    glBindVertexArray(crosshair_vertex_array);
-
-    gl_object crosshair_vertex_buffer = 0;
-    glGenBuffers(1, &crosshair_vertex_buffer);
-    glBindBuffer(GL_ARRAY_BUFFER, crosshair_vertex_buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(crosshair_vertices), crosshair_vertices, GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(f32), NULL);
-    glEnableVertexAttribArray(0);
-
-    gl_object crosshair_index_buffer = 0;
-    glGenBuffers(1, &crosshair_index_buffer);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, crosshair_index_buffer);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(crosshair_indices), crosshair_indices, GL_STATIC_DRAW);
-
-    mat4 proj = {0};
+    mat4 proj = bb_mat4_identity();
     {
         int width, height;
         SDL_GetWindowSize(window, &width, &height);
-        glViewport(0, 0, width, height);
         proj = bb_mat4_perspective((f32)width / (f32)height, 3.14f / 2.0f, 0.1f, 100.0f);
+        glViewport(0, 0, width, height);
     }
+
+    vec3 player_position = {0.0f, 66.0f, 0.0f};
+    quat player_rotation = {1.0f, 0.0f, 0.0f, 0.0f};
 
     f32 print_timer = 0.0f;
     u32 frame_count = 0;
     bb_input_update();
-    while (!bb_was_quit())
+    for (;;)
     {
         bb_input_update();
         ++frame_count;
@@ -264,10 +253,13 @@ int main(void)
             print_timer = 0.0f;
         }
 
+        if (bb_was_quit())
+            break;
+
         if (bb_window_resized())
         {
-            glViewport(0, 0, bb_window_width(), bb_window_height());
             proj = bb_mat4_perspective((f32)bb_window_width() / (f32)bb_window_height(), 3.14f / 2.0f, 0.1f, 100.0f);
+            glViewport(0, 0, bb_window_width(), bb_window_height());
         }
 
         if (bb_mouse_delta().x != 0.0f || bb_mouse_delta().y != 0.0f)
@@ -291,41 +283,32 @@ int main(void)
         }
 
         vec3 dir = bb_quat_rotate_vec3(player_rotation, (vec3){0.0f, 0.0f, -1.0f});
-        struct bb_world_hit hit = bb_world_raycast(&world, (struct bb_ray){player_position, dir});
+        struct bb_world_raycast_hit cast;
+        bool facing_block = bb_world_raycast(&world, (struct bb_ray){player_position, dir}, &cast);
 
-        if (bb_button_pressed(bb_button_primary) && hit.hit)
+        if (bb_button_pressed(bb_button_primary) && facing_block)
         {
-            if (hit.hit)
-                bb_world_set(&world, hit.pos, bb_block_air);
+            bb_world_get(&world, cast.x, cast.y, cast.z)->type = bb_block_air;
+            bb_world_update(&world, cast.x, cast.y, cast.z);
         }
 
-        if (bb_button_pressed(bb_button_secondary) && hit.hit && hit.face != bb_face_inside)
+        if (bb_button_pressed(bb_button_secondary) && facing_block && cast.face != bb_face_inside)
         {
-            vec3 placed_pos = hit.pos;
-            switch (hit.face)
+            i32 x = cast.x;
+            i32 y = cast.y;
+            i32 z = cast.z;
+            switch (cast.face)
             {
-            case bb_face_top:
-                placed_pos.y += 1.0f;
-                break;
-            case bb_face_bottom:
-                placed_pos.y -= 1.0f;
-                break;
-            case bb_face_right:
-                placed_pos.x += 1.0f;
-                break;
-            case bb_face_left:
-                placed_pos.x -= 1.0f;
-                break;
-            case bb_face_front:
-                placed_pos.z -= 1.0f;
-                break;
-            case bb_face_back:
-                placed_pos.z += 1.0f;
-                break;
-            case bb_face_inside:
-                break;
+                case bb_face_top:    y += 1; break;
+                case bb_face_bottom: y -= 1; break;
+                case bb_face_right:  x += 1; break;
+                case bb_face_left:   x -= 1; break;
+                case bb_face_front:  z -= 1; break;
+                case bb_face_back:   z += 1; break;
+                case bb_face_inside: break;
             }
-            bb_world_set(&world, placed_pos, bb_block_grass);
+            bb_world_get(&world, x, y, z)->type = bb_block_grass;
+            bb_world_update(&world, x, y, z);
         }
 
         glClearColor(0.1f, 0.3f, 0.3f, 1.0f);
@@ -341,7 +324,7 @@ int main(void)
 
         glUniform1i(glGetUniformLocation(block_shader, "uTex"), 0);
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, grass_block_texture);
+        glBindTexture(GL_TEXTURE_2D, grass_texture);
 
         glUniformMatrix4fv(glGetUniformLocation(block_shader, "u_proj"), 1, false, (f32*)&proj);
         glUniformMatrix4fv(glGetUniformLocation(block_shader, "u_view"), 1, false, (f32*)&view);
@@ -350,23 +333,17 @@ int main(void)
         {
             for (usize world_x = 0; world_x < world.width; ++world_x)
             {
-                struct bb_chunk_mesh* mesh = &world.chunk_meshes[world_z * world.width + world_x];
-
                 mat4 model = bb_mat4_identity();
-                model.w = (vec4){
-                    .x = ((f32)world_x - (f32)world.width / 2) * bb_chunk_width,
-                    .y = (f32)-bb_chunk_height / 2,
-                    .z = ((f32)world_z - (f32)world.depth / 2) * bb_chunk_depth,
-                    .w = 1.0f,
-                };
                 glUniformMatrix4fv(glGetUniformLocation(block_shader, "u_model"), 1, false, (f32*)&model);
 
-                glBindVertexArray(mesh->vertex_array);
-                glDrawElements(GL_TRIANGLES, mesh->index_count, GL_UNSIGNED_INT, NULL);
+                struct bb_mesh* chunk_mesh = &world.chunk_meshes[world_z * world.width + world_x];
+
+                glBindVertexArray(chunk_mesh->vertex_array);
+                glDrawElements(GL_TRIANGLES, chunk_mesh->index_count, GL_UNSIGNED_INT, NULL);
             }
         }
 
-        if (hit.hit)
+        if (facing_block)
         {
             glUseProgram(outline_shader);
 
@@ -374,16 +351,11 @@ int main(void)
             glUniformMatrix4fv(glGetUniformLocation(outline_shader, "u_view"), 1, false, (f32*)&view);
 
             mat4 model = bb_mat4_identity();
-            model.w = (vec4){
-                .x = hit.pos.x,
-                .y = hit.pos.y,
-                .z = hit.pos.z,
-                .w = 1.0f,
-            };
+            model.w = (vec4){(f32)cast.x, (f32)cast.y, (f32)cast.z, 1.0f};
             glUniformMatrix4fv(glGetUniformLocation(outline_shader, "u_model"), 1, false, (f32*)&model);
 
-            glBindVertexArray(outline_vertex_array);
-            glDrawElements(GL_TRIANGLES, OUTLINE_QUADS * 6, GL_UNSIGNED_INT, NULL);
+            glBindVertexArray(outline.vertex_array);
+            glDrawElements(GL_TRIANGLES, outline.index_count, GL_UNSIGNED_INT, NULL);
         }
 
         glUseProgram(crosshair_shader);
@@ -391,8 +363,8 @@ int main(void)
 
         glUniform1f(glGetUniformLocation(crosshair_shader, "u_aspect"), (f32)bb_window_width() / (f32)bb_window_height());
 
-        glBindVertexArray(crosshair_vertex_array);
-        glDrawElements(GL_TRIANGLES, CROSSHAIR_QUADS * 6, GL_UNSIGNED_INT, NULL);
+        glBindVertexArray(crosshair.vertex_array);
+        glDrawElements(GL_TRIANGLES, crosshair.index_count, GL_UNSIGNED_INT, NULL);
 
         SDL_GL_SwapWindow(window);
     }

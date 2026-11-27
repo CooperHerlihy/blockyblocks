@@ -26,6 +26,13 @@ typedef size_t usize;
 
 typedef GLuint gl_object;
 
+struct bb_mesh {
+    gl_object vertex_array;
+    gl_object vertex_buffer;
+    gl_object index_buffer;
+    u32 index_count;
+};
+
 static inline const char* bb_gl_error_to_string(GLenum e)
 {
     switch (e)

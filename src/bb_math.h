@@ -484,12 +484,12 @@ struct bb_box {
     vec3 end;
 };
 
-static inline struct bb_box bb_unit_cube_at(vec3 pos) {
+static inline struct bb_box bb_unit_cube_around(vec3 pos) {
     struct bb_box cube;
     cube.begin = (vec3){
-        floorf(pos.x + 0.5f) - 0.5f,
-        floorf(pos.y + 0.5f) - 0.5f,
-        floorf(pos.z + 0.5f) - 0.5f,
+        floorf(pos.x),
+        floorf(pos.y),
+        floorf(pos.z),
     };
     cube.end = (vec3){cube.begin.x + 1.0f, cube.begin.y + 1.0f, cube.begin.z + 1.0f};
     return cube;

@@ -48,11 +48,11 @@ endif()
 # errors unless suppressed.
 if(MSVC)
     target_compile_definitions(blockyblocks PRIVATE _CRT_SECURE_NO_WARNINGS)
-    target_compile_options(blockyblocks PRIVATE /W4)
+    target_compile_options(blockyblocks PRIVATE /WX /W4)
 endif()
 
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU" AND NOT CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
-    target_compile_options(blockyblocks PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(blockyblocks PRIVATE -Werror -Wall -Wextra -Wpedantic -Wconversion)
 
     # Debug builds: symbols plus a light optimization level that keeps the code
     # debuggable (-Og preserves variable mappings and stepping order).

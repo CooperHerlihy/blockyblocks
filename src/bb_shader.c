@@ -111,7 +111,7 @@ gl_object bb_shader_create(const char* shader_file)
 
     gl_object vertex_shader = glCreateShader(GL_VERTEX_SHADER);
     const GLchar* vertex_shader_source = shader_source + vertex_shader_pos;
-    const GLint vertex_shader_length = vertex_shader_end - vertex_shader_pos;
+    const GLint vertex_shader_length = (GLint)vertex_shader_end - (GLint)vertex_shader_pos;
     glShaderSource(vertex_shader, 1, &vertex_shader_source, &vertex_shader_length);
     glCompileShader(vertex_shader);
 
@@ -141,7 +141,7 @@ gl_object bb_shader_create(const char* shader_file)
 
     gl_object fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
     const GLchar* fragment_shader_source = shader_source + fragment_shader_pos;
-    const GLint fragment_shader_length = fragment_shader_end - fragment_shader_pos;
+    const GLint fragment_shader_length = (GLint)fragment_shader_end - (GLint)fragment_shader_pos;
     glShaderSource(fragment_shader, 1, &fragment_shader_source, &fragment_shader_length);
     glCompileShader(fragment_shader);
 
