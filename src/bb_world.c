@@ -1,5 +1,8 @@
 #include "bb_world.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 struct bb_block* bb_world_get(struct bb_world* world, i32 x, i32 y, i32 z)
 {
     x += (i32)world->width * bb_chunk_width / 2;
@@ -30,10 +33,6 @@ struct bb_chunk_mesh_data {
 
 static void bb_chunk_mesh_add_block(struct bb_chunk_mesh_data* mesh, struct bb_world* world, i32 x, i32 y, i32 z)
 {
-    struct bb_block* b = bb_world_get(world, x, y, z);
-    if (b == NULL || b->type == bb_block_air)
-        return;
-
     struct point {
         i32 x, y, z;
     };
@@ -86,12 +85,14 @@ static void bb_chunk_mesh_add_block(struct bb_chunk_mesh_data* mesh, struct bb_w
         },
     };
 
-    static const vec2 face_uvs[4] = {
-        {0, 0},
-        {1, 0},
-        {1, 1},
-        {0, 1}
+    static const vec2 texture_uvs[bb_block_count][4] = {
+        [bb_block_grass] = {{0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 0.5f}, {0.0f, 0.5f}},
+        [bb_block_stone] = {{0.0f, 0.5f}, {1.0f, 0.5f}, {1.0f, 1.0f}, {0.0f, 1.0f}}
     };
+
+    struct bb_block* b = bb_world_get(world, x, y, z);
+    if (b == NULL || b->type == bb_block_air)
+        return;
 
     vec3 pos = {(f32)x, (f32)y, (f32)z};
 
@@ -110,22 +111,12 @@ static void bb_chunk_mesh_add_block(struct bb_chunk_mesh_data* mesh, struct bb_w
                 mesh->index_capacity *= 2;
                 mesh->indices = realloc(mesh->indices, mesh->index_capacity * sizeof(*mesh->indices));
             }
-            mesh->vertices[mesh->vertex_count + 0] = (struct bb_chunk_vertex){
-                bb_vec3_add(pos, faces[face][0]),
-                face_uvs[0]
-            };
-            mesh->vertices[mesh->vertex_count + 1] = (struct bb_chunk_vertex){
-                bb_vec3_add(pos, faces[face][1]),
-                face_uvs[1]
-            };
-            mesh->vertices[mesh->vertex_count + 2] = (struct bb_chunk_vertex){
-                bb_vec3_add(pos, faces[face][2]),
-                face_uvs[2]
-            };
-            mesh->vertices[mesh->vertex_count + 3] = (struct bb_chunk_vertex){
-                bb_vec3_add(pos, faces[face][3]),
-                face_uvs[3]
-            };
+
+            const vec2* uvs = texture_uvs[b->type];
+            mesh->vertices[mesh->vertex_count + 0] = (struct bb_chunk_vertex){bb_vec3_add(pos, faces[face][0]), uvs[0]};
+            mesh->vertices[mesh->vertex_count + 1] = (struct bb_chunk_vertex){bb_vec3_add(pos, faces[face][1]), uvs[1]};
+            mesh->vertices[mesh->vertex_count + 2] = (struct bb_chunk_vertex){bb_vec3_add(pos, faces[face][2]), uvs[2]};
+            mesh->vertices[mesh->vertex_count + 3] = (struct bb_chunk_vertex){bb_vec3_add(pos, faces[face][3]), uvs[3]};
 
             mesh->indices[mesh->index_count + 0] = (u32)mesh->vertex_count + 0;
             mesh->indices[mesh->index_count + 1] = (u32)mesh->vertex_count + 1;
@@ -201,6 +192,31 @@ static void bb_chunk_mesh_destroy(struct bb_world* world, usize chunk_x, usize c
     glDeleteBuffers(1, &mesh->index_buffer);
 }
 
+static gl_object bb_world_texture_generate(void)
+{
+    int width, height, channels;
+    void* pixels = stbi_load("resources/textures.png", &width, &height, &channels, 4);
+    if (pixels == NULL)
+    {
+        printf("Could not load \"resources/textures.png\"");
+        width = 1;
+        height = 1;
+        pixels = malloc(sizeof(u32));
+        ((u32*)pixels)[0] = 0xFFFF00FF;
+    }
+
+    gl_object texture = 0;
+
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    free(pixels);
+    return texture;
+}
+
 struct bb_world bb_world_create(usize width, usize depth)
 {
     struct bb_world world = {0};
@@ -214,14 +230,18 @@ struct bb_world bb_world_create(usize width, usize depth)
         for (usize world_x = 0; world_x < world.width; ++world_x)
         {
             struct bb_chunk* chunk = &world.chunk_data[world_z * world.width + world_x];
-            memset(chunk->blocks, 0, sizeof(chunk->blocks));
-            for (usize y = 0; y < bb_chunk_height / 2; ++y)
+            for (usize y = 0; y < bb_chunk_height; ++y)
             {
                 for (usize z = 0; z < bb_chunk_depth; ++z)
                 {
                     for (usize x = 0; x < bb_chunk_width; ++x)
                     {
-                        chunk->blocks[y][z][x].type = bb_block_grass;
+                        enum bb_block_type type = bb_block_air;
+                        if (y < 61)
+                            type = bb_block_stone;
+                        else if (y < 64)
+                            type = bb_block_grass;
+                        chunk->blocks[y][z][x].type = type;
                     }
                 }
             }
@@ -235,6 +255,8 @@ struct bb_world bb_world_create(usize width, usize depth)
             bb_chunk_mesh_generate(&world, world_x, world_z);
         }
     }
+
+    world.textures = bb_world_texture_generate();
 
     return world;
 }

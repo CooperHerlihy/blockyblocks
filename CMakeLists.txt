@@ -22,6 +22,7 @@ add_executable(blockyblocks
 
 target_include_directories(blockyblocks
     PUBLIC
+    vendor
     vendor/glad/include)
 
 target_link_libraries(blockyblocks

@@ -11,6 +11,7 @@
 enum bb_block_type {
     bb_block_air = 0,
     bb_block_grass,
+    bb_block_stone,
     bb_block_count,
 };
 
@@ -29,6 +30,8 @@ struct bb_world {
     struct bb_chunk* chunk_data;
     // depth * width chunks, accessed chunk_meshes[chunk z idx * width + chunk x idx];
     struct bb_mesh* chunk_meshes;
+    // all the textures in a sprite sheet
+    gl_object textures;
 };
 
 struct bb_world bb_world_create(usize width, usize depth);

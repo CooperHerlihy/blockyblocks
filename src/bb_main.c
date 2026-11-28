@@ -8,28 +8,6 @@
 #include <stdio.h>
 #include <stddef.h>
 
-static gl_object bb_grass_texture_generate(void)
-{
-    static const u32 grass_pixels[8][8] = {
-        { 0xFF3E9158, 0xFF37804D, 0xFF3E9158, 0xFF37804D, 0xFF3E9158, 0xFF37804D, 0xFF3E9158, 0xFF37804D },
-        { 0xFF37804D, 0xFF67CB8A, 0xFF4FAF6F, 0xFF5AC079, 0xFF4FAF6F, 0xFF67CB8A, 0xFF4FAF6F, 0xFF3E9158 },
-        { 0xFF3E9158, 0xFF5AC079, 0xFF67CB8A, 0xFF4FAF6F, 0xFF5AC079, 0xFF4FAF6F, 0xFF67CB8A, 0xFF37804D },
-        { 0xFF37804D, 0xFF4FAF6F, 0xFF5AC079, 0xFF4FAF6F, 0xFF67CB8A, 0xFF5AC079, 0xFF4FAF6F, 0xFF3E9158 },
-        { 0xFF3E9158, 0xFF429A5E, 0xFF4FAF6F, 0xFF67CB8A, 0xFF4FAF6F, 0xFF5AC079, 0xFF4FAF6F, 0xFF37804D },
-        { 0xFF37804D, 0xFF5AC079, 0xFF67CB8A, 0xFF5AC079, 0xFF5AC079, 0xFF4FAF6F, 0xFF67CB8A, 0xFF3E9158 },
-        { 0xFF3E9158, 0xFF67CB8A, 0xFF4FAF6F, 0xFF4FAF6F, 0xFF67CB8A, 0xFF5AC079, 0xFF4FAF6F, 0xFF37804D },
-        { 0xFF37804D, 0xFF3E9158, 0xFF37804D, 0xFF3E9158, 0xFF37804D, 0xFF3E9158, 0xFF37804D, 0xFF3E9158 },
-    };
-
-    gl_object grass_texture = 0;
-    glGenTextures(1, &grass_texture);
-    glBindTexture(GL_TEXTURE_2D, grass_texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 8, 8, 0, GL_RGBA, GL_UNSIGNED_BYTE, grass_pixels);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    return grass_texture;
-}
-
 static struct bb_mesh bb_outline_generate(f32 thickness)
 {
     f32 half_thickness = thickness * 0.5f;
@@ -217,10 +195,8 @@ int main(void)
         return 1;
     }
 
-    struct bb_world world = bb_world_create(8, 8);
-
     gl_object block_shader = bb_shader_create("shaders/blocks.glsl");
-    gl_object grass_texture = bb_grass_texture_generate();
+    struct bb_world world = bb_world_create(8, 8);
 
     gl_object outline_shader = bb_shader_create("shaders/outline.glsl");
     struct bb_mesh outline = bb_outline_generate(0.015f);
@@ -325,7 +301,7 @@ int main(void)
 
         glUniform1i(glGetUniformLocation(block_shader, "uTex"), 0);
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, grass_texture);
+        glBindTexture(GL_TEXTURE_2D, world.textures);
 
         glUniformMatrix4fv(glGetUniformLocation(block_shader, "u_proj"), 1, false, (f32*)&proj);
         glUniformMatrix4fv(glGetUniformLocation(block_shader, "u_view"), 1, false, (f32*)&view);
