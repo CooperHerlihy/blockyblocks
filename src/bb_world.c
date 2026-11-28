@@ -286,75 +286,105 @@ void bb_world_update(struct bb_world* world, i32 x, i32 y, i32 z)
         bb_chunk_mesh_generate(world, chunk_x, chunk_z + 1);
 }
 
-bool bb_world_raycast(struct bb_world* world, struct bb_ray ray, struct bb_world_raycast_hit* hit)
+bool bb_world_raycast(struct bb_world* world, struct bb_ray ray, struct bb_world_raycast_hit* cast)
 {
     i32 x = (i32)floorf(ray.pos.x);
     i32 y = (i32)floorf(ray.pos.y);
     i32 z = (i32)floorf(ray.pos.z);
+
     struct bb_block* block = bb_world_get(world, x, y, z);
     if (block != NULL && block->type != bb_block_air)
     {
-        hit->x = x;
-        hit->y = y;
-        hit->z = z;
-        hit->face = bb_face_inside;
+        cast->x = x;
+        cast->y = y;
+        cast->z = z;
+        cast->face = bb_face_inside;
         return true;
     }
 
-    f32 dist = 0.0f;
-    for (;;)
+    i32 x_sign = (i32)(ray.dir.x > 0) - (i32)(ray.dir.x < 0);
+    i32 y_sign = (i32)(ray.dir.y > 0) - (i32)(ray.dir.y < 0);
+    i32 z_sign = (i32)(ray.dir.z > 0) - (i32)(ray.dir.z < 0);
+
+    f32 x_t = x_sign > 0 ? ((x + 1) - ray.pos.x) / ray.dir.x : x_sign < 0 ? (x - ray.pos.x) / ray.dir.x : INFINITY;
+    f32 y_t = y_sign > 0 ? ((y + 1) - ray.pos.y) / ray.dir.y : y_sign < 0 ? (y - ray.pos.y) / ray.dir.y : INFINITY;
+    f32 z_t = z_sign > 0 ? ((z + 1) - ray.pos.z) / ray.dir.z : z_sign < 0 ? (z - ray.pos.z) / ray.dir.z : INFINITY;
+
+    f32 x_d = x_sign / ray.dir.x;
+    f32 y_d = y_sign / ray.dir.y;
+    f32 z_d = z_sign / ray.dir.z;
+
+    for (usize i = 0; i < 100; ++i)
     {
-        struct bb_box box = bb_unit_cube_around(ray.pos);
-        ray.pos.x = fminf(fmaxf(ray.pos.x, box.begin.x + 1.e-4f), box.end.x - 1.e-4f);
-        ray.pos.y = fminf(fmaxf(ray.pos.y, box.begin.y + 1.e-4f), box.end.y - 1.e-4f);
-        ray.pos.z = fminf(fmaxf(ray.pos.z, box.begin.z + 1.e-4f), box.end.z - 1.e-4f);
-
-        struct bb_raycast ray_hit = bb_raycast_box(ray, box);
-        if (!ray_hit.hit)
-            break;
-
-        dist += ray_hit.t;
-        if (dist > 100.0f)
-            break;
-
-        ray.pos = bb_ray_at(ray, ray_hit.t + 1.e-4f);
-
-        x = (i32)floorf(ray.pos.x);
-        y = (i32)floorf(ray.pos.y);
-        z = (i32)floorf(ray.pos.z);
-        block = bb_world_get(world, x, y, z);
-        if (block != NULL && block->type != bb_block_air)
+        if (x_t < y_t)
         {
-            hit->x = x;
-            hit->y = y;
-            hit->z = z;
-
-            if (ray_hit.norm.x == -1.0f)
+            if (x_t < z_t)
             {
-                hit->face = bb_face_right;
+                x += x_sign;
+                block = bb_world_get(world, x, y, z);
+                if (block == NULL)
+                    return false;
+                if (block->type != bb_block_air)
+                {
+                    cast->x = x;
+                    cast->y = y;
+                    cast->z = z;
+                    cast->face = x_sign > 0 ? bb_face_left : bb_face_right;
+                    return true;
+                }
+                x_t += x_d;
             }
-            else if (ray_hit.norm.x == 1.0f)
+            else
             {
-                hit->face = bb_face_left;
+                z += z_sign;
+                block = bb_world_get(world, x, y, z);
+                if (block == NULL)
+                    return false;
+                if (block->type != bb_block_air)
+                {
+                    cast->x = x;
+                    cast->y = y;
+                    cast->z = z;
+                    cast->face = z_sign > 0 ? bb_face_front : bb_face_back;
+                    return true;
+                }
+                z_t += z_d;
             }
-            else if (ray_hit.norm.y == -1.0f)
+        }
+        else
+        {
+            if (y_t < z_t)
             {
-                hit->face = bb_face_top;
+                y += y_sign;
+                block = bb_world_get(world, x, y, z);
+                if (block == NULL)
+                    return false;
+                if (block->type != bb_block_air)
+                {
+                    cast->x = x;
+                    cast->y = y;
+                    cast->z = z;
+                    cast->face = y_sign > 0 ? bb_face_bottom : bb_face_top;
+                    return true;
+                }
+                y_t += y_d;
             }
-            else if (ray_hit.norm.y == 1.0f)
+            else
             {
-                hit->face = bb_face_bottom;
+                z += z_sign;
+                block = bb_world_get(world, x, y, z);
+                if (block == NULL)
+                    return false;
+                if (block->type != bb_block_air)
+                {
+                    cast->x = x;
+                    cast->y = y;
+                    cast->z = z;
+                    cast->face = z_sign > 0 ? bb_face_front : bb_face_back;
+                    return true;
+                }
+                z_t += z_d;
             }
-            else if (ray_hit.norm.z == -1.0f)
-            {
-                hit->face = bb_face_back;
-            }
-            else if (ray_hit.norm.z == 1.0f)
-            {
-                hit->face = bb_face_front;
-            }
-
-            return true;
         }
     }
 

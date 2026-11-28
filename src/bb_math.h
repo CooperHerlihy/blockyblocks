@@ -454,7 +454,6 @@ static inline mat4 bb_mat4_view(vec3 position, quat rotation)
 }
 
 struct bb_raycast {
-    bool hit;
     f32 t;
     vec3 norm;
 };
@@ -502,25 +501,27 @@ static inline bool bb_box_contains_point(struct bb_box box, vec3 point)
         && point.z >= box.begin.z && point.z <= box.end.z;
 }
 
-static inline struct bb_raycast bb_raycast_plane(struct bb_ray ray, struct bb_plane plane)
+static inline bool bb_raycast_plane(struct bb_ray ray, struct bb_plane plane, struct bb_raycast* cast)
 {
     f32 denom = bb_vec3_dot(plane.norm, ray.dir);
     if (denom == 0.0f)
-        return (struct bb_raycast){0};
+        return false;
 
     f32 t = (plane.d - bb_vec3_dot(plane.norm, ray.pos)) / denom;
     if (t < 0.0f)
-        return (struct bb_raycast){0};
+        return false;
 
-    return (struct bb_raycast){true, t, plane.norm};
+    cast->t = t;
+    cast->norm = plane.norm;
+    return true;
 }
 
-static inline struct bb_raycast bb_raycast_box(struct bb_ray ray, struct bb_box box)
+static inline bool bb_raycast_box(struct bb_ray ray, struct bb_box box, struct bb_raycast* cast)
 {
     if (box.begin.x > box.end.x ||
         box.begin.y > box.end.y ||
         box.begin.z > box.end.z)
-        return (struct bb_raycast){0};
+        return false;
 
     f32 hits[6] = {
         (box.begin.x - ray.pos.x) / ray.dir.x,
@@ -531,71 +532,31 @@ static inline struct bb_raycast bb_raycast_box(struct bb_ray ray, struct bb_box 
         (box.end.z - ray.pos.z) / ray.dir.z,
     };
 
-    if (bb_box_contains_point(box, ray.pos))
+    static const vec3 norms[6] = {
+        { 1.0f,  0.0f,  0.0f},
+        { 0.0f,  1.0f,  0.0f},
+        { 0.0f,  0.0f,  1.0f},
+        {-1.0f,  0.0f,  0.0f},
+        { 0.0f, -1.0f,  0.0f},
+        { 0.0f,  0.0f, -1.0f},
+    };
+
+    cast->t = INFINITY;
+    for (u32 i = 0; i < 6; ++i)
     {
-        vec3 norms[6] = {
-            {-1.0f,  0.0f,  0.0f},
-            { 0.0f, -1.0f,  0.0f},
-            { 0.0f,  0.0f, -1.0f},
-            { 1.0f,  0.0f,  0.0f},
-            { 0.0f,  1.0f,  0.0f},
-            { 0.0f,  0.0f,  1.0f},
-        };
+        if (hits[i] < 0.0f)
+            continue;
 
-        struct bb_raycast hit = {0};
-        hit.t = INFINITY;
-        f32 dirs[3] = {ray.dir.x, ray.dir.y, ray.dir.z};
-        for (u32 a = 0; a < 3; ++a)
+        if (!bb_box_contains_point(box, bb_ray_at(ray, hits[i])))
+            continue;
+
+        if (hits[i] < cast->t)
         {
-            if (dirs[a] == 0.0f)
-                continue;
-
-            u32 i = dirs[a] < 0.0f ? a : a + 3;
-            if (hits[i] >= 0.0f && hits[i] < hit.t)
-            {
-                hit.t = hits[i];
-                hit.norm = norms[i];
-            }
+            cast->t = hits[i];
+            cast->norm = norms[i];
         }
-        if (hit.t == INFINITY)
-            return (struct bb_raycast){0};
-
-        hit.hit = true;
-        return hit;
     }
-    else
-    {
-        vec3 norms[6] = {
-            {-1.0f,  0.0f,  0.0f},
-            { 0.0f, -1.0f,  0.0f},
-            { 0.0f,  0.0f, -1.0f},
-            { 1.0f,  0.0f,  0.0f},
-            { 0.0f,  1.0f,  0.0f},
-            { 0.0f,  0.0f,  1.0f},
-        };
-
-        struct bb_raycast hit = {0};
-        hit.t = INFINITY;
-        for (u32 i = 0; i < 6; ++i)
-        {
-            if (hits[i] < 0.0f)
-                continue;
-
-            if (!bb_box_contains_point(box, bb_ray_at(ray, hits[i])))
-                continue;
-
-            if (hits[i] < hit.t)
-            {
-                hit.t = hits[i];
-                hit.norm = norms[i];
-            }
-        }
-        if (hit.t == INFINITY)
-            return (struct bb_raycast){0};
-
-        hit.hit = true;
-        return hit;
-    }
+    return cast->t != INFINITY;
 }
 
 #endif // BB_MATH_H

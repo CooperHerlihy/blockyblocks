@@ -264,8 +264,9 @@ int main(void)
 
         if (bb_mouse_delta().x != 0.0f || bb_mouse_delta().y != 0.0f)
         {
-            quat rot_x = bb_quat_from_axis_angle((vec3){0.0f, -1.0f, 0.0f}, bb_mouse_delta().x * 0.003f);
-            quat rot_y = bb_quat_from_axis_angle((vec3){-1.0f, 0.0f, 0.0f}, bb_mouse_delta().y * 0.003f);
+            f32 speed = 0.003f;
+            quat rot_x = bb_quat_from_axis_angle((vec3){0.0f, -1.0f, 0.0f}, bb_mouse_delta().x * speed);
+            quat rot_y = bb_quat_from_axis_angle((vec3){-1.0f, 0.0f, 0.0f}, bb_mouse_delta().y * speed);
             player_rotation = bb_quat_mul(rot_x, bb_quat_mul(player_rotation, rot_y));
         }
 
